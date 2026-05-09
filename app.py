@@ -22,14 +22,24 @@ from __future__ import annotations
 import eventlet
 eventlet.monkey_patch()
 
+import base64
+import json
 import os
 import random
+import re
 import string
 import time
 from threading import Lock
 from typing import Any
 
-from flask import Flask, render_template, request
+# Load .env in local development; in Lambda, set env vars via zappa_settings.json.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+from flask import Flask, Response, abort, jsonify, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from problems import build_codebase
@@ -192,11 +202,424 @@ def chars_changed(a: str, b: str) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# CatoCode — anonymous HTML/CSS/JS project hosting
+# --------------------------------------------------------------------------- #
+DATABASE_URL: str | None = os.environ.get("DATABASE_URL")
+PROJECTS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "projects.json"
+)
+projects_lock = Lock()
+
+PROJECT_MAX_BYTES = 8 * 1024 * 1024
+PROJECT_ID_ALPHABET = string.ascii_lowercase + string.digits
+TEXT_FILE_EXTS = {"html", "htm", "css", "js"}
+IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"}
+
+# --------------------------------------------------------------------------- #
+# PostgreSQL backend
+# --------------------------------------------------------------------------- #
+_pg_conn = None
+_pg_lock = Lock()
+
+_CREATE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS catocode_projects (
+    id            TEXT PRIMARY KEY,
+    title         TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    author        TEXT NOT NULL,
+    files         JSONB NOT NULL DEFAULT '{}',
+    images        JSONB NOT NULL DEFAULT '{}',
+    ratings_count INTEGER NOT NULL DEFAULT 0,
+    total_rating  INTEGER NOT NULL DEFAULT 0,
+    created_at    DOUBLE PRECISION NOT NULL
+);
+"""
+
+
+def _pg_connect():
+    """Return a live psycopg2 connection, reconnecting if needed."""
+    global _pg_conn
+    import psycopg2
+    try:
+        if _pg_conn is None or _pg_conn.closed:
+            raise Exception("no connection")
+        _pg_conn.cursor().execute("SELECT 1")
+    except Exception:
+        _pg_conn = psycopg2.connect(DATABASE_URL)
+    return _pg_conn
+
+
+def init_db() -> None:
+    """Create tables if they don't exist. Called at module load (Lambda cold start)."""
+    if not DATABASE_URL:
+        return
+    try:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute(_CREATE_TABLE_SQL)
+        conn.commit()
+    except Exception as exc:
+        # Don't crash the whole app if DB is temporarily unreachable at startup.
+        print(f"[catocode] DB init warning: {exc}", flush=True)
+
+
+def _pg_row_to_dict(row: tuple) -> dict[str, Any]:
+    pid, title, desc, author, files, images, rc, tr, ca = row
+    return {
+        "id": pid, "title": title, "description": desc or "",
+        "author": author, "files": files or {}, "images": images or {},
+        "ratings_count": rc or 0, "total_rating": tr or 0, "created_at": ca,
+    }
+
+
+def _pg_get_all() -> list[dict[str, Any]]:
+    conn = _pg_connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, title, description, author, files, images, "
+            "ratings_count, total_rating, created_at FROM catocode_projects"
+        )
+        return [_pg_row_to_dict(r) for r in cur.fetchall()]
+
+
+def _pg_get_one(pid: str) -> dict[str, Any] | None:
+    conn = _pg_connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, title, description, author, files, images, "
+            "ratings_count, total_rating, created_at FROM catocode_projects WHERE id=%s",
+            (pid,),
+        )
+        row = cur.fetchone()
+    return _pg_row_to_dict(row) if row else None
+
+
+def _pg_insert(p: dict[str, Any]) -> None:
+    import psycopg2.extras
+    conn = _pg_connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO catocode_projects "
+            "(id, title, description, author, files, images, "
+            " ratings_count, total_rating, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                p["id"], p["title"], p["description"], p["author"],
+                json.dumps(p["files"]), json.dumps(p["images"]),
+                0, 0, p["created_at"],
+            ),
+        )
+    conn.commit()
+
+
+def _pg_update_rating(
+    pid: str, prior: int, rating: int
+) -> dict[str, Any] | None:
+    """Atomically update ratings. Returns updated row or None if not found."""
+    count_delta = (
+        (1 if rating > 0 else 0) - (1 if prior > 0 else 0)
+    )
+    total_delta = rating - prior
+    conn = _pg_connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE catocode_projects "
+            "SET ratings_count = GREATEST(0, ratings_count + %s), "
+            "    total_rating  = GREATEST(0, total_rating  + %s) "
+            "WHERE id = %s "
+            "RETURNING ratings_count, total_rating",
+            (count_delta, total_delta, pid),
+        )
+        row = cur.fetchone()
+    conn.commit()
+    if not row:
+        return None
+    count, total = row
+    return {"ratings_count": count, "total_rating": total,
+            "average": (total / count) if count > 0 else 0.0}
+
+
+def _pg_id_exists(pid: str) -> bool:
+    conn = _pg_connect()
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM catocode_projects WHERE id=%s", (pid,))
+        return cur.fetchone() is not None
+
+
+# --------------------------------------------------------------------------- #
+# JSON fallback backend (local development without DATABASE_URL)
+# --------------------------------------------------------------------------- #
+def _json_load() -> dict[str, Any]:
+    if not os.path.exists(PROJECTS_PATH):
+        return {}
+    try:
+        with open(PROJECTS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _json_save(data: dict[str, Any]) -> None:
+    tmp = PROJECTS_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp, PROJECTS_PATH)
+
+
+# --------------------------------------------------------------------------- #
+# Unified storage API (routes call these)
+# --------------------------------------------------------------------------- #
+def db_get_all() -> list[dict[str, Any]]:
+    if DATABASE_URL:
+        return _pg_get_all()
+    return list(_json_load().values())
+
+
+def db_get_one(pid: str) -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return _pg_get_one(pid)
+    return _json_load().get(pid)
+
+
+def db_new_id() -> str:
+    while True:
+        pid = "".join(random.choices(PROJECT_ID_ALPHABET, k=8))
+        if DATABASE_URL:
+            if not _pg_id_exists(pid):
+                return pid
+        else:
+            if pid not in _json_load():
+                return pid
+
+
+def db_insert(p: dict[str, Any]) -> None:
+    if DATABASE_URL:
+        _pg_insert(p)
+        return
+    with projects_lock:
+        data = _json_load()
+        data[p["id"]] = p
+        _json_save(data)
+
+
+def db_rate(pid: str, prior: int, rating: int) -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return _pg_update_rating(pid, prior, rating)
+    with projects_lock:
+        data = _json_load()
+        if pid not in data:
+            return None
+        p = data[pid]
+        if "ratings_count" not in p:
+            legacy = int(p.pop("stars", 0))
+            p["ratings_count"] = legacy
+            p["total_rating"] = legacy * 5
+        count = max(0, int(p["ratings_count"])
+                    + (1 if rating > 0 else 0) - (1 if prior > 0 else 0))
+        total = max(0, int(p["total_rating"]) + (rating - prior))
+        p["ratings_count"] = count
+        p["total_rating"] = total
+        _json_save(data)
+    return {"ratings_count": count, "total_rating": total,
+            "average": (total / count) if count > 0 else 0.0}
+
+
+# Run at module load so tables exist before the first request.
+# On Lambda, this fires on each cold start.
+init_db()
+
+# --------------------------------------------------------------------------- #
+# Shared helpers
+# --------------------------------------------------------------------------- #
+def rating_summary(p: dict[str, Any]) -> dict[str, Any]:
+    count = int(p.get("ratings_count", 0))
+    total = int(p.get("total_rating", 0))
+    if count == 0 and "stars" in p:
+        legacy = int(p.get("stars", 0))
+        count, total = legacy, legacy * 5
+    avg = (total / count) if count > 0 else 0.0
+    return {"ratings_count": count, "total_rating": total, "average": avg}
+
+
+def project_card(p: dict[str, Any]) -> dict[str, Any]:
+    r = rating_summary(p)
+    return {
+        "id": p["id"],
+        "title": p["title"],
+        "description": p.get("description") or "",
+        "author": p["author"],
+        "ratings_count": r["ratings_count"],
+        "total_rating": r["total_rating"],
+        "average": r["average"],
+        "created_at": p.get("created_at", 0),
+    }
+
+
+def safe_filename(name: str) -> str | None:
+    name = (name or "").strip().strip("/")
+    if not name or "/" in name or "\\" in name or name in (".", ".."):
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_\-. ]+", name):
+        return None
+    if "." not in name:
+        return None
+    if len(name) > 80:
+        return None
+    return name
+
+
+# --------------------------------------------------------------------------- #
 # routes
 # --------------------------------------------------------------------------- #
 @app.route("/")
-def index():
+def home():
+    cards = [project_card(p) for p in db_get_all()]
+    cards.sort(
+        key=lambda c: (
+            0 if c["ratings_count"] > 0 else 1,
+            -c["average"],
+            -c["ratings_count"],
+            -c["created_at"],
+        )
+    )
+    return render_template("catocode_home.html", projects=cards[:10])
+
+
+@app.route("/explore")
+def explore():
+    projects = sorted(db_get_all(), key=lambda p: -p.get("created_at", 0))
+    return render_template(
+        "catocode_explore.html",
+        projects=[project_card(p) for p in projects],
+    )
+
+
+@app.route("/new")
+def new_project():
+    return render_template("catocode_editor.html")
+
+
+@app.route("/p/<pid>")
+def view_project(pid):
+    project = db_get_one(pid)
+    if not project:
+        abort(404)
+    return render_template(
+        "catocode_project.html",
+        project=project_card(project),
+        files=list(project.get("files", {}).keys()),
+        images=list(project.get("images", {}).keys()),
+    )
+
+
+@app.route("/codesabotage")
+def code_sabotage():
     return render_template("index.html")
+
+
+@app.route("/api/projects", methods=["POST"])
+def api_publish():
+    payload = request.get_json(silent=True) or {}
+    title       = (payload.get("title")       or "").strip()[:80]
+    description = (payload.get("description") or "").strip()[:500]
+    author      = (payload.get("author")      or "").strip()[:60] or "Anonymous"
+    files  = payload.get("files")  or {}
+    images = payload.get("images") or {}
+
+    if not title:
+        return jsonify({"error": "Title is required."}), 400
+    if not isinstance(files, dict) or not isinstance(images, dict):
+        return jsonify({"error": "Invalid project payload."}), 400
+    if "index.html" not in files:
+        return jsonify({"error": "Project must have an index.html."}), 400
+
+    clean_files: dict[str, str] = {}
+    for name, content in files.items():
+        safe = safe_filename(name)
+        if not safe:
+            return jsonify({"error": f"Invalid filename: {name}"}), 400
+        ext = safe.rsplit(".", 1)[-1].lower()
+        if ext not in TEXT_FILE_EXTS:
+            return jsonify({"error": f"Unsupported file type: {safe}"}), 400
+        if not isinstance(content, str):
+            return jsonify({"error": f"Bad content for {safe}"}), 400
+        clean_files[safe] = content
+
+    clean_images: dict[str, str] = {}
+    for name, data_url in images.items():
+        safe = safe_filename(name)
+        if not safe:
+            return jsonify({"error": f"Invalid image name: {name}"}), 400
+        ext = safe.rsplit(".", 1)[-1].lower()
+        if ext not in IMAGE_EXTS:
+            return jsonify({"error": f"Unsupported image type: {safe}"}), 400
+        if not isinstance(data_url, str) or not data_url.startswith("data:"):
+            return jsonify({"error": f"Bad image data for {safe}"}), 400
+        clean_images[safe] = data_url
+
+    size = sum(len(v) for v in clean_files.values()) + sum(
+        len(v) for v in clean_images.values()
+    )
+    if size > PROJECT_MAX_BYTES:
+        return jsonify({"error": "Project exceeds 8MB."}), 413
+
+    pid = db_new_id()
+    db_insert({
+        "id": pid, "title": title, "description": description,
+        "author": author, "files": clean_files, "images": clean_images,
+        "ratings_count": 0, "total_rating": 0, "created_at": time.time(),
+    })
+    return jsonify({"id": pid, "url": f"/p/{pid}"})
+
+
+@app.route("/api/projects/<pid>/rate", methods=["POST"])
+def api_rate(pid):
+    payload = request.get_json(silent=True) or {}
+    try:
+        prior  = int(payload.get("prior",  0))
+        rating = int(payload.get("rating", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid rating"}), 400
+    if not (0 <= prior <= 5) or not (0 <= rating <= 5):
+        return jsonify({"error": "Rating must be 0-5"}), 400
+
+    result = db_rate(pid, prior, rating)
+    if result is None:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(result)
+
+
+@app.route("/r/<pid>/")
+@app.route("/r/<pid>/<path:filename>")
+def project_asset(pid, filename: str = "index.html"):
+    safe = safe_filename(filename)
+    if not safe:
+        abort(404)
+    project = db_get_one(pid)
+    if not project:
+        abort(404)
+
+    ext = safe.rsplit(".", 1)[-1].lower()
+
+    if safe in project.get("files", {}):
+        mime = {
+            "html": "text/html", "htm": "text/html",
+            "css": "text/css", "js": "application/javascript",
+        }.get(ext, "text/plain")
+        return Response(project["files"][safe], mimetype=mime)
+
+    if safe in project.get("images", {}):
+        data_url = project["images"][safe]
+        m = re.match(r"data:([^;]+);base64,(.+)", data_url, re.DOTALL)
+        if not m:
+            abort(404)
+        try:
+            body = base64.b64decode(m.group(2))
+        except Exception:
+            abort(404)
+        return Response(body, mimetype=m.group(1))
+
+    abort(404)
 
 
 # --------------------------------------------------------------------------- #

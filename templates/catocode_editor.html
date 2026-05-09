@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>New Project · CatoCode</title>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+  <style>
+    :root {
+      --sky-1: #BAE6FD;
+      --sky-2: #E0F2FE;
+      --ink: #0F172A;
+      --ink-2: #334155;
+      --muted: #64748B;
+      --line: #E2E8F0;
+      --primary: #0EA5E9;
+      --primary-2: #0284C7;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      color: var(--ink);
+      background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 100%);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    /* ── topbar ── */
+    .topbar {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, .85);
+      backdrop-filter: blur(14px) saturate(140%);
+      border-bottom: 1px solid rgba(15, 23, 42, .07);
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px; font-weight: 800;
+      font-size: 16px; letter-spacing: -0.01em;
+    }
+    .brand-logo {
+      width: 32px; height: 32px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #38BDF8 0%, #818CF8 55%, #A78BFA 100%);
+      display: grid; place-items: center;
+      box-shadow: 0 4px 12px rgba(56, 189, 248, .4), inset 0 1px 0 rgba(255,255,255,.3);
+      flex-shrink: 0;
+    }
+    .topbar .title-tag {
+      color: var(--muted); font-size: 13.5px; font-weight: 600; padding: 4px 10px;
+      background: rgba(15,23,42,.05); border-radius: 8px;
+    }
+    .topbar-spacer { flex: 1; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 8px 14px; border-radius: 10px; font-weight: 600; font-size: 13.5px;
+      border: 1px solid transparent; cursor: pointer; font-family: inherit;
+      transition: transform .12s, background .15s, box-shadow .15s;
+    }
+    .btn-primary { background: var(--ink); color: #fff; box-shadow: 0 2px 6px rgba(15,23,42,.18); }
+    .btn-primary:hover { background: #1E293B; transform: translateY(-1px); }
+    .btn-sky {
+      background: linear-gradient(135deg, #38BDF8, #6366F1);
+      color: #fff; box-shadow: 0 4px 12px rgba(56, 189, 248, .35); font-weight: 700;
+    }
+    .btn-sky:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(56, 189, 248, .45); }
+    .btn-ghost {
+      background: rgba(255, 255, 255, .8); color: var(--ink); border-color: rgba(15, 23, 42, .08);
+    }
+    .btn-ghost:hover { background: #fff; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    /* ── workspace ── */
+    .workspace {
+      flex: 1; min-height: 0;
+      display: grid;
+      grid-template-columns: 230px 1fr 1fr;
+      gap: 0;
+    }
+
+    /* ── sidebar ── */
+    .sidebar {
+      background: rgba(255, 255, 255, .78);
+      border-right: 1px solid rgba(15, 23, 42, .07);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-section {
+      padding: 14px 14px 6px;
+    }
+    .sidebar-section h4 {
+      margin: 0 0 8px; font-size: 11px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .sidebar-section h4 button {
+      background: transparent; border: none; color: var(--primary-2); cursor: pointer;
+      font-weight: 700; font-size: 12px; padding: 2px 6px; border-radius: 6px;
+    }
+    .sidebar-section h4 button:hover { background: rgba(14, 165, 233, .12); }
+
+    .file-list {
+      list-style: none; margin: 0; padding: 0;
+      flex: 1; overflow-y: auto;
+    }
+    .file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 14px; cursor: pointer; font-size: 13.5px;
+      color: var(--ink-2); border-left: 3px solid transparent;
+      transition: background .12s;
+    }
+    .file-item:hover { background: rgba(15, 23, 42, .04); }
+    .file-item.active {
+      background: rgba(14, 165, 233, .12);
+      border-left-color: var(--primary);
+      color: var(--primary-2); font-weight: 700;
+    }
+    .file-item .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-item .fact {
+      visibility: hidden; padding: 2px 4px; border-radius: 4px;
+      background: transparent; border: none; color: var(--muted); cursor: pointer;
+      font-size: 12px;
+    }
+    .file-item:hover .fact { visibility: visible; }
+    .file-item .fact:hover { background: rgba(15, 23, 42, .08); color: var(--ink); }
+    .file-icon {
+      flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 16px; border-radius: 4px;
+      font-size: 9px; font-weight: 800; letter-spacing: .04em;
+      color: #fff; font-family: ui-monospace, "SF Mono", monospace;
+    }
+    .file-icon.html { background: #E34F26; }
+    .file-icon.css  { background: #1572B6; }
+    .file-icon.js   { background: #F7DF1E; color: #1E1E1E; }
+    .file-icon.txt  { background: #94A3B8; }
+
+    .image-list {
+      list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto;
+    }
+    .image-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px; font-size: 13px; color: var(--ink-2);
+    }
+    .image-item:hover { background: rgba(15, 23, 42, .04); }
+    .image-item img {
+      width: 28px; height: 28px; border-radius: 6px; object-fit: cover; background: #f1f5f9;
+    }
+    .image-item .iname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; }
+    .image-item button {
+      background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 4px;
+    }
+    .image-item button:hover { background: rgba(15, 23, 42, .08); color: #DC2626; }
+
+    .upload-row {
+      padding: 6px 14px 14px;
+    }
+    .upload-btn {
+      display: block; width: 100%; padding: 9px 12px; border-radius: 10px;
+      background: rgba(14, 165, 233, .1); color: var(--primary-2);
+      border: 1px dashed rgba(14, 165, 233, .4); cursor: pointer; text-align: center;
+      font-weight: 600; font-size: 13px; font-family: inherit;
+      transition: background .15s;
+    }
+    .upload-btn:hover { background: rgba(14, 165, 233, .18); }
+
+    /* ── editor pane ── */
+    .editor-pane {
+      display: flex; flex-direction: column;
+      background: #ffffff;
+      min-width: 0;
+    }
+    .editor-header {
+      flex-shrink: 0;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #F8FAFC;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13.5px; color: var(--ink-2);
+    }
+    .editor-header .filename {
+      font-family: ui-monospace, "SF Mono", monospace; font-weight: 700; color: var(--ink);
+    }
+    .editor-header-spacer { flex: 1; }
+    #monacoMount { flex: 1; min-height: 0; }
+
+    /* ── preview pane ── */
+    .preview-pane {
+      display: flex; flex-direction: column;
+      background: #fff;
+      border-left: 1px solid rgba(15, 23, 42, .07);
+      min-width: 0;
+    }
+    .preview-header {
+      flex-shrink: 0;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #F8FAFC;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; color: var(--muted); font-weight: 600;
+    }
+    .preview-header .dot {
+      width: 8px; height: 8px; border-radius: 999px; background: #10B981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, .2);
+    }
+    .preview-header-spacer { flex: 1; }
+    #previewFrame {
+      flex: 1; border: none; background: #fff;
+    }
+
+    /* ── modal ── */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, .55);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+    .modal-bg.show { display: flex; }
+    .modal {
+      width: min(440px, 92vw); background: #fff; border-radius: 18px;
+      padding: 26px 26px 22px;
+      box-shadow: 0 30px 80px rgba(15, 23, 42, .35);
+    }
+    .modal h2 { margin: 0 0 6px; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+    .modal p.sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+    .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+    .field label { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+    .field input, .field textarea {
+      padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+      font-size: 14px; outline: none; font-family: inherit; background: #F8FAFC;
+      transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+    .field input:focus, .field textarea:focus {
+      border-color: var(--primary); background: #fff;
+      box-shadow: 0 0 0 3px rgba(14, 165, 233, .18);
+    }
+    .field textarea { min-height: 80px; resize: vertical; }
+    .warn-banner {
+      padding: 10px 12px; border-radius: 10px; font-size: 13px;
+      background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;
+      margin-bottom: 16px; display: flex; gap: 8px; align-items: flex-start;
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      padding: 10px 16px; border-radius: 10px;
+      background: #0F172A; color: #fff; font-size: 13.5px; font-weight: 600;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, .3);
+      opacity: 0; transition: opacity .2s; z-index: 200; pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast.error { background: #DC2626; }
+
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: 200px 1fr; }
+      .preview-pane { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/" class="brand">
+      <span class="brand-logo">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M3 13 L5.5 5 L9 13" fill="white" opacity="0.95"/>
+          <path d="M13 13 L16.5 5 L19 13" fill="white" opacity="0.95"/>
+          <circle cx="11" cy="15" r="7" fill="white" opacity="0.97"/>
+          <ellipse cx="8.8" cy="14.4" rx="1.15" ry="1.45" fill="#6366F1"/>
+          <circle cx="9.1" cy="13.9" r="0.38" fill="white" opacity="0.8"/>
+          <ellipse cx="13.2" cy="14.4" rx="1.15" ry="1.45" fill="#6366F1"/>
+          <circle cx="13.5" cy="13.9" r="0.38" fill="white" opacity="0.8"/>
+          <path d="M10.4 17.2 Q11 17.8 11.6 17.2 Q11 16.7 10.4 17.2Z" fill="#FB7185"/>
+          <path d="M9.8 17.8 Q11 18.6 12.2 17.8" stroke="#F9A8D4" stroke-width="0.5" fill="none" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span>CatoCode</span>
+    </a>
+    <span class="title-tag">Untitled draft · not saved</span>
+    <div class="topbar-spacer"></div>
+    <a href="/" class="btn btn-ghost">Discard</a>
+    <button id="publishBtn" class="btn btn-sky">Publish ☁</button>
+  </div>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h4>
+          Files
+          <button id="newFileBtn" title="New file">+ New</button>
+        </h4>
+        <ul id="fileList" class="file-list"></ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>Images</h4>
+        <ul id="imageList" class="image-list"></ul>
+        <div class="upload-row">
+          <input type="file" id="imageUpload" accept="image/*" multiple style="display:none" />
+          <button class="upload-btn" id="uploadImageBtn">⬆ Upload Image</button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="editor-pane">
+      <div class="editor-header">
+        <span>📄</span>
+        <span class="filename" id="currentFile">index.html</span>
+        <div class="editor-header-spacer"></div>
+        <button id="renameBtn" class="btn btn-ghost" style="padding:4px 10px;font-size:12.5px;">Rename</button>
+        <button id="deleteBtn" class="btn btn-ghost" style="padding:4px 10px;font-size:12.5px;color:#DC2626;">Delete</button>
+      </div>
+      <div id="monacoMount"></div>
+    </section>
+
+    <section class="preview-pane">
+      <div class="preview-header">
+        <span class="dot"></span>
+        <span>Live Preview</span>
+        <div class="preview-header-spacer"></div>
+        <button id="refreshBtn" class="btn btn-ghost" style="padding:4px 10px;font-size:12.5px;">↻ Refresh</button>
+      </div>
+      <iframe id="previewFrame" sandbox="allow-scripts allow-modals allow-forms"></iframe>
+    </section>
+  </div>
+
+  <!-- publish modal -->
+  <div id="publishModal" class="modal-bg">
+    <div class="modal">
+      <h2>Publish your project</h2>
+      <p class="sub">Once published, anyone can view it on Explore.</p>
+      <div class="warn-banner">
+        <span>⚠️</span>
+        <span><b>Heads up:</b> once published, a project cannot be edited. Make sure everything is the way you want it.</span>
+      </div>
+      <div class="field">
+        <label for="pubTitle">Title</label>
+        <input id="pubTitle" type="text" maxlength="80" placeholder="My awesome project" />
+      </div>
+      <div class="field">
+        <label for="pubDesc">Description</label>
+        <textarea id="pubDesc" maxlength="500" placeholder="What does it do?"></textarea>
+      </div>
+      <div class="field">
+        <label for="pubAuthor">Your name (anonymous if blank)</label>
+        <input id="pubAuthor" type="text" maxlength="60" placeholder="Anonymous" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="cancelPublishBtn">Cancel</button>
+        <button class="btn btn-sky" id="confirmPublishBtn">Publish</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+  // ─────────────────────────────────────────────────────────────────────
+  // initial project state
+  // ─────────────────────────────────────────────────────────────────────
+  const STARTER_HTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>My Project</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Hello, CatoCode! ☁️</h1>
+  <p>Edit <code>index.html</code>, <code>style.css</code> or <code>script.js</code> and watch it update live.</p>
+  <button id="b">Click me</button>
+  <script src="script.js"><\/script>
+</body>
+</html>
+`;
+  const STARTER_CSS = `body {
+  font-family: system-ui, sans-serif;
+  background: linear-gradient(180deg, #BAE6FD, #E0F2FE);
+  color: #0F172A;
+  min-height: 100vh;
+  margin: 0;
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+h1 { font-size: clamp(28px, 6vw, 48px); margin-bottom: 8px; }
+button {
+  margin-top: 14px;
+  padding: 12px 22px;
+  border: none;
+  border-radius: 10px;
+  background: #0EA5E9;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(14, 165, 233, .35);
+}
+button:hover { transform: translateY(-1px); }
+`;
+  const STARTER_JS = `document.getElementById('b').addEventListener('click', () => {
+  alert('Hello from script.js!');
+});
+`;
+
+  const state = {
+    files: {
+      'index.html': STARTER_HTML,
+      'style.css':  STARTER_CSS,
+      'script.js':  STARTER_JS,
+    },
+    images: {},          // name -> data URL
+    current: 'index.html',
+  };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Monaco setup
+  // ─────────────────────────────────────────────────────────────────────
+  let editor = null;
+  const models = {};   // filename -> ITextModel
+  const refreshDebounced = debounce(refreshPreview, 280);
+
+  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+  require(['vs/editor/editor.main'], () => {
+    editor = monaco.editor.create(document.getElementById('monacoMount'), {
+      automaticLayout: true,
+      fontSize: 13.5,
+      fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      renderLineHighlight: 'gutter',
+      tabSize: 2,
+      wordWrap: 'on',
+    });
+    for (const name of Object.keys(state.files)) {
+      models[name] = monaco.editor.createModel(state.files[name], languageOf(name));
+    }
+    editor.setModel(models[state.current]);
+    editor.onDidChangeModelContent(() => {
+      state.files[state.current] = editor.getValue();
+      refreshDebounced();
+    });
+    refreshPreview();
+  });
+
+  function languageOf(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    if (ext === 'html' || ext === 'htm') return 'html';
+    if (ext === 'css') return 'css';
+    if (ext === 'js')  return 'javascript';
+    return 'plaintext';
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // file list rendering
+  // ─────────────────────────────────────────────────────────────────────
+  function fileIconHtml(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    if (ext === 'html' || ext === 'htm') return '<span class="file-icon html">HTML</span>';
+    if (ext === 'css') return '<span class="file-icon css">CSS</span>';
+    if (ext === 'js')  return '<span class="file-icon js">JS</span>';
+    return '<span class="file-icon txt">TXT</span>';
+  }
+
+  function renderFiles() {
+    const ul = document.getElementById('fileList');
+    ul.innerHTML = '';
+    const names = Object.keys(state.files).sort((a, b) => {
+      if (a === 'index.html') return -1;
+      if (b === 'index.html') return 1;
+      return a.localeCompare(b);
+    });
+    for (const name of names) {
+      const li = document.createElement('li');
+      li.className = 'file-item' + (name === state.current ? ' active' : '');
+      li.innerHTML =
+        `${fileIconHtml(name)}
+         <span class="fname">${escapeHtml(name)}</span>`;
+      li.addEventListener('click', () => switchFile(name));
+      ul.appendChild(li);
+    }
+    document.getElementById('currentFile').textContent = state.current;
+    document.getElementById('deleteBtn').disabled = (state.current === 'index.html');
+  }
+
+  function renderImages() {
+    const ul = document.getElementById('imageList');
+    ul.innerHTML = '';
+    const names = Object.keys(state.images).sort();
+    if (!names.length) {
+      const li = document.createElement('li');
+      li.className = 'image-item';
+      li.style.color = 'var(--muted)';
+      li.style.fontStyle = 'italic';
+      li.textContent = 'No images yet';
+      ul.appendChild(li);
+      return;
+    }
+    for (const name of names) {
+      const li = document.createElement('li');
+      li.className = 'image-item';
+      const img = document.createElement('img');
+      img.src = state.images[name];
+      img.alt = name;
+      const span = document.createElement('span');
+      span.className = 'iname';
+      span.textContent = name;
+      const btn = document.createElement('button');
+      btn.title = 'Delete';
+      btn.textContent = '✕';
+      btn.addEventListener('click', () => {
+        if (confirm(`Delete image "${name}"?`)) {
+          delete state.images[name];
+          renderImages();
+          refreshDebounced();
+        }
+      });
+      li.append(img, span, btn);
+      ul.appendChild(li);
+    }
+  }
+
+  function switchFile(name) {
+    if (!(name in state.files)) return;
+    state.current = name;
+    if (editor && models[name]) editor.setModel(models[name]);
+    renderFiles();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // file actions
+  // ─────────────────────────────────────────────────────────────────────
+  document.getElementById('newFileBtn').addEventListener('click', () => {
+    const name = prompt('New file name (e.g. about.html, theme.css, util.js)');
+    if (!name) return;
+    const ok = validateFilename(name, 'file');
+    if (!ok) return;
+    if (state.files[ok]) { toast('File already exists', true); return; }
+    state.files[ok] = '';
+    if (window.monaco) models[ok] = monaco.editor.createModel('', languageOf(ok));
+    state.current = ok;
+    if (editor) editor.setModel(models[ok]);
+    renderFiles();
+    refreshDebounced();
+  });
+
+  document.getElementById('renameBtn').addEventListener('click', () => {
+    const old = state.current;
+    if (old === 'index.html') { toast('index.html is required', true); return; }
+    const next = prompt('Rename to', old);
+    if (!next || next === old) return;
+    const ok = validateFilename(next, 'file');
+    if (!ok) return;
+    if (state.files[ok]) { toast('File already exists', true); return; }
+    state.files[ok] = state.files[old];
+    delete state.files[old];
+    if (models[old]) {
+      const content = models[old].getValue();
+      models[old].dispose();
+      delete models[old];
+      models[ok] = monaco.editor.createModel(content, languageOf(ok));
+    }
+    state.current = ok;
+    if (editor) editor.setModel(models[ok]);
+    renderFiles();
+    refreshDebounced();
+  });
+
+  document.getElementById('deleteBtn').addEventListener('click', () => {
+    const cur = state.current;
+    if (cur === 'index.html') return;
+    if (!confirm(`Delete ${cur}?`)) return;
+    delete state.files[cur];
+    if (models[cur]) { models[cur].dispose(); delete models[cur]; }
+    state.current = 'index.html';
+    if (editor) editor.setModel(models['index.html']);
+    renderFiles();
+    refreshDebounced();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // image upload
+  // ─────────────────────────────────────────────────────────────────────
+  document.getElementById('uploadImageBtn').addEventListener('click', () => {
+    document.getElementById('imageUpload').click();
+  });
+  document.getElementById('imageUpload').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    for (const file of files) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast(`"${file.name}" is over 2MB`, true);
+        continue;
+      }
+      const name = uniqueName(file.name);
+      const ok = validateFilename(name, 'image', /* silent */ true);
+      if (!ok) { toast(`Invalid name: ${file.name}`, true); continue; }
+      const dataUrl = await readAsDataURL(file);
+      state.images[ok] = dataUrl;
+    }
+    renderImages();
+    refreshDebounced();
+  });
+
+  function readAsDataURL(file) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = rej;
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function uniqueName(name) {
+    const safe = name.replace(/[^A-Za-z0-9_\-.]/g, '_');
+    if (!state.images[safe] && !state.files[safe]) return safe;
+    const dot = safe.lastIndexOf('.');
+    const base = dot >= 0 ? safe.slice(0, dot) : safe;
+    const ext  = dot >= 0 ? safe.slice(dot)    : '';
+    let i = 2;
+    while (state.images[`${base}_${i}${ext}`] || state.files[`${base}_${i}${ext}`]) i++;
+    return `${base}_${i}${ext}`;
+  }
+
+  function validateFilename(name, kind, silent) {
+    name = (name || '').trim();
+    if (!name || name.includes('/') || name.includes('\\')) {
+      if (!silent) toast('Invalid filename', true);
+      return null;
+    }
+    if (!/^[A-Za-z0-9_\-. ]+$/.test(name)) {
+      if (!silent) toast('Letters, numbers, dot/dash/underscore only', true);
+      return null;
+    }
+    if (!name.includes('.')) {
+      if (!silent) toast('Filename must have an extension', true);
+      return null;
+    }
+    const ext = name.split('.').pop().toLowerCase();
+    if (kind === 'file' && !['html','htm','css','js'].includes(ext)) {
+      if (!silent) toast('Only .html, .css, .js are allowed', true);
+      return null;
+    }
+    if (kind === 'image' && !['png','jpg','jpeg','gif','webp','svg','ico','bmp'].includes(ext)) {
+      if (!silent) toast('Unsupported image type', true);
+      return null;
+    }
+    return name;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // live preview — build a virtual fs of blob URLs and rewrite refs
+  // ─────────────────────────────────────────────────────────────────────
+  let activeBlobUrls = [];
+  function clearBlobs() {
+    activeBlobUrls.forEach(u => URL.revokeObjectURL(u));
+    activeBlobUrls = [];
+  }
+  function newBlobUrl(blob) {
+    const u = URL.createObjectURL(blob);
+    activeBlobUrls.push(u);
+    return u;
+  }
+  function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  function rewriteRefs(text, urlMap) {
+    let out = text;
+    for (const [name, url] of Object.entries(urlMap)) {
+      const r = new RegExp(`(['"\\(\\s=])${escapeRegex(name)}(?=['"\\)\\s>?#])`, 'g');
+      out = out.replace(r, `$1${url}`);
+    }
+    return out;
+  }
+
+  function refreshPreview() {
+    clearBlobs();
+    const urls = {};
+
+    // 1. images
+    for (const [name, dataUrl] of Object.entries(state.images)) {
+      const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+      if (!m) continue;
+      const bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0));
+      urls[name] = newBlobUrl(new Blob([bytes], { type: m[1] }));
+    }
+
+    // 2. css and js (allow image refs)
+    const mimeFor = (ext) => ({
+      css: 'text/css',
+      js:  'application/javascript',
+      html: 'text/html',
+      htm:  'text/html',
+    }[ext] || 'text/plain');
+    for (const [name, content] of Object.entries(state.files)) {
+      if (name === 'index.html') continue;
+      const ext = name.split('.').pop().toLowerCase();
+      const replaced = rewriteRefs(content, urls);
+      urls[name] = newBlobUrl(new Blob([replaced], { type: mimeFor(ext) }));
+    }
+
+    // 3. index.html (gets all refs replaced)
+    const html = state.files['index.html'] || '';
+    const finalHtml = rewriteRefs(html, urls);
+    const frame = document.getElementById('previewFrame');
+    frame.srcdoc = finalHtml;
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', refreshPreview);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // publish flow
+  // ─────────────────────────────────────────────────────────────────────
+  const publishModal = document.getElementById('publishModal');
+  document.getElementById('publishBtn').addEventListener('click', () => {
+    publishModal.classList.add('show');
+    document.getElementById('pubTitle').focus();
+  });
+  document.getElementById('cancelPublishBtn').addEventListener('click', () => {
+    publishModal.classList.remove('show');
+  });
+  publishModal.addEventListener('click', (e) => {
+    if (e.target === publishModal) publishModal.classList.remove('show');
+  });
+
+  document.getElementById('confirmPublishBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('confirmPublishBtn');
+    const title = document.getElementById('pubTitle').value.trim();
+    const description = document.getElementById('pubDesc').value.trim();
+    const author = document.getElementById('pubAuthor').value.trim();
+    if (!title) { toast('Title is required', true); return; }
+    btn.disabled = true; btn.textContent = 'Publishing…';
+    try {
+      // sync latest editor content
+      if (editor && models[state.current]) {
+        state.files[state.current] = models[state.current].getValue();
+      }
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title, description, author,
+          files: state.files,
+          images: state.images,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Publish failed');
+      toast('Published! Redirecting…');
+      setTimeout(() => { window.location.href = data.url; }, 600);
+    } catch (err) {
+      toast(err.message || 'Publish failed', true);
+      btn.disabled = false; btn.textContent = 'Publish';
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // helpers
+  // ─────────────────────────────────────────────────────────────────────
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+  }
+  let toastTimer;
+  function toast(msg, err) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.toggle('error', !!err);
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  renderFiles();
+  renderImages();
+  </script>
+</body>
+</html>

@@ -1,0 +1,240 @@
+{% extends "catocode_base.html" %}
+{% block title %}{{ project.title }} · CatoCode{% endblock %}
+
+{% block head %}
+<style>
+  .proj-head {
+    padding: 36px 0 18px;
+    display: flex; align-items: flex-start; gap: 22px; flex-wrap: wrap;
+  }
+  .proj-head h1 {
+    font-size: clamp(28px, 4.5vw, 40px);
+    margin: 0 0 8px; font-weight: 800; letter-spacing: -0.02em;
+  }
+  .proj-head .desc {
+    color: var(--ink-2); margin: 0 0 10px; font-size: 15.5px; line-height: 1.55;
+    max-width: 720px;
+  }
+  .proj-head .by { color: var(--muted); font-size: 14px; }
+  .proj-head .by b { color: var(--ink-2); }
+  .proj-head-main { flex: 1; min-width: 280px; }
+
+  .rating-box {
+    display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+    padding: 14px 16px; border-radius: 16px;
+    background: rgba(255, 255, 255, .9); border: 1px solid var(--line);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, .06);
+    min-width: 200px;
+  }
+  .rating-summary {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    font-size: 13.5px; color: var(--muted); font-weight: 600;
+  }
+  .rating-summary .avg { font-size: 22px; color: #B45309; font-weight: 800; }
+  .rating-summary .avg.unrated { color: var(--muted); }
+  .star-row {
+    display: inline-flex; gap: 2px; align-items: center;
+  }
+  .star-row button {
+    background: transparent; border: none; padding: 2px;
+    cursor: pointer; font-size: 24px; line-height: 1;
+    color: #CBD5E1; transition: transform .1s, color .12s;
+    font-family: inherit;
+  }
+  .star-row button:hover { transform: scale(1.15); }
+  .star-row button.filled { color: #F59E0B; }
+  .star-row button.preview { color: #FBBF24; }
+  .star-row button:disabled { cursor: not-allowed; opacity: .6; }
+  .rating-help {
+    font-size: 11.5px; color: var(--muted); font-weight: 600;
+  }
+  .rating-help .clear {
+    background: transparent; border: none; color: var(--primary-2);
+    cursor: pointer; padding: 0 2px; font-size: 11.5px; font-weight: 700;
+    font-family: inherit;
+  }
+  .rating-help .clear:hover { text-decoration: underline; }
+
+  .frame-wrap {
+    margin: 18px 0 0;
+    border-radius: 16px; overflow: hidden;
+    background: #fff; border: 1px solid rgba(15, 23, 42, .08);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .08);
+  }
+  .frame-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px; background: #F1F5F9;
+    border-bottom: 1px solid var(--line);
+    font-size: 12.5px; color: var(--muted);
+  }
+  .frame-bar .dot {
+    width: 10px; height: 10px; border-radius: 999px;
+    display: inline-block;
+  }
+  .frame-bar .dot.r { background: #F87171; }
+  .frame-bar .dot.y { background: #FBBF24; }
+  .frame-bar .dot.g { background: #34D399; }
+  .frame-bar .url {
+    background: #fff; padding: 4px 10px; border-radius: 8px;
+    border: 1px solid var(--line); font-family: ui-monospace, monospace;
+    color: var(--ink-2); font-size: 12px; margin-left: 8px;
+  }
+  .frame-bar .grow { flex: 1; }
+  .frame-bar a {
+    color: var(--primary-2); font-weight: 600; font-size: 12.5px;
+  }
+  iframe.proj-frame {
+    width: 100%; height: 65vh; min-height: 460px;
+    border: none; background: #fff; display: block;
+  }
+
+  .info-row {
+    margin-top: 20px;
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    color: var(--muted); font-size: 13.5px;
+  }
+  .chip {
+    padding: 5px 10px; border-radius: 999px;
+    background: rgba(255, 255, 255, .8); border: 1px solid var(--line);
+    color: var(--ink-2); font-weight: 600;
+  }
+  .info-row .chip b { color: var(--ink); }
+
+  .locked-note {
+    margin-top: 14px;
+    background: rgba(254, 243, 199, .8); border: 1px solid #FCD34D;
+    color: #92400E; padding: 10px 14px; border-radius: 12px;
+    font-size: 13.5px; display: flex; gap: 8px; align-items: center;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="container">
+  <div class="proj-head">
+    <div class="proj-head-main">
+      <h1>{{ project.title }}</h1>
+      {% if project.description %}<p class="desc">{{ project.description }}</p>{% endif %}
+      <div class="by">by <b>{{ project.author }}</b></div>
+    </div>
+    <div class="rating-box" data-pid="{{ project.id }}">
+      <div class="rating-summary">
+        {% if project.ratings_count > 0 %}
+          <span id="avgVal" class="avg">{{ '%.1f'|format(project.average) }}</span>
+        {% else %}
+          <span id="avgVal" class="avg unrated">—</span>
+        {% endif %}
+        <span>/ 5 · <span id="countVal">{{ project.ratings_count }}</span> rating<span id="countS">{{ '' if project.ratings_count == 1 else 's' }}</span></span>
+      </div>
+      <div id="starRow" class="star-row" role="radiogroup" aria-label="Rate this project">
+        <button type="button" data-v="1" aria-label="1 star">★</button>
+        <button type="button" data-v="2" aria-label="2 stars">★</button>
+        <button type="button" data-v="3" aria-label="3 stars">★</button>
+        <button type="button" data-v="4" aria-label="4 stars">★</button>
+        <button type="button" data-v="5" aria-label="5 stars">★</button>
+      </div>
+      <div class="rating-help">
+        <span id="ratingHelp">Click to rate</span>
+        <button id="clearRating" class="clear" type="button" hidden>Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-bar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="url">catocode.app/p/{{ project.id }}</span>
+      <span class="grow"></span>
+      <a href="/r/{{ project.id }}/" target="_blank" rel="noopener">Open in new tab ↗</a>
+    </div>
+    <iframe class="proj-frame" sandbox="allow-scripts allow-modals allow-forms"
+            src="/r/{{ project.id }}/index.html"></iframe>
+  </div>
+
+  <div class="info-row">
+    <span class="chip"><b>{{ files|length }}</b> file{{ '' if files|length == 1 else 's' }}</span>
+    {% if images %}<span class="chip"><b>{{ images|length }}</b> image{{ '' if images|length == 1 else 's' }}</span>{% endif %}
+    <span class="chip">ID <b>{{ project.id }}</b></span>
+  </div>
+
+  <div class="locked-note">
+    🔒 This project is published and immutable — it can be starred but not edited.
+  </div>
+</section>
+
+<script>
+(function () {
+  const box = document.querySelector('.rating-box');
+  const pid = box.dataset.pid;
+  const row = document.getElementById('starRow');
+  const stars = Array.from(row.querySelectorAll('button'));
+  const avgEl = document.getElementById('avgVal');
+  const countEl = document.getElementById('countVal');
+  const countS = document.getElementById('countS');
+  const helpEl = document.getElementById('ratingHelp');
+  const clearBtn = document.getElementById('clearRating');
+  const key = 'catocode:rating:' + pid;
+  let myRating = Number(localStorage.getItem(key) || 0);
+
+  function paint(value) {
+    stars.forEach(s => {
+      const v = Number(s.dataset.v);
+      s.classList.toggle('filled', !!myRating && v <= myRating);
+      s.classList.toggle('preview', !myRating && value > 0 && v <= value);
+    });
+    if (myRating) {
+      helpEl.textContent = `You rated ${myRating}/5`;
+      clearBtn.hidden = false;
+    } else {
+      helpEl.textContent = 'Click to rate';
+      clearBtn.hidden = true;
+    }
+  }
+
+  function setSummary(avg, count) {
+    if (count > 0) {
+      avgEl.textContent = avg.toFixed(1);
+      avgEl.classList.remove('unrated');
+    } else {
+      avgEl.textContent = '—';
+      avgEl.classList.add('unrated');
+    }
+    countEl.textContent = String(count);
+    countS.textContent = count === 1 ? '' : 's';
+  }
+
+  async function submit(newRating) {
+    const prior = myRating;
+    if (prior === newRating) return;
+    stars.forEach(s => s.disabled = true);
+    try {
+      const res = await fetch('/api/projects/' + pid + '/rate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prior, rating: newRating }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Rate failed');
+      myRating = newRating;
+      if (newRating > 0) localStorage.setItem(key, String(newRating));
+      else localStorage.removeItem(key);
+      setSummary(data.average, data.ratings_count);
+      paint(0);
+    } catch (e) {
+      // no-op; UI stays as-is
+    } finally {
+      stars.forEach(s => s.disabled = false);
+    }
+  }
+
+  stars.forEach(s => {
+    s.addEventListener('mouseenter', () => paint(Number(s.dataset.v)));
+    s.addEventListener('mouseleave', () => paint(0));
+    s.addEventListener('click',      () => submit(Number(s.dataset.v)));
+  });
+  clearBtn.addEventListener('click', () => submit(0));
+
+  paint(0);
+})();
+</script>
+{% endblock %}

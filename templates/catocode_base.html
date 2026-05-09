@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}CatoCode{% endblock %}</title>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <style>
+    :root {
+      --sky-1: #BAE6FD;
+      --sky-2: #E0F2FE;
+      --sky-3: #F0F9FF;
+      --ink: #0F172A;
+      --ink-2: #334155;
+      --muted: #64748B;
+      --line: #E2E8F0;
+      --card: #FFFFFFCC;
+      --primary: #0EA5E9;
+      --primary-2: #0284C7;
+      --warn: #F59E0B;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      color: var(--ink);
+      background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 60%, var(--sky-3) 100%);
+      background-attachment: fixed;
+      overflow-x: hidden;
+      position: relative;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    /* ── animated clouds ── */
+    .sky {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    }
+    .cloud {
+      position: absolute;
+      filter: drop-shadow(0 8px 18px rgba(15, 23, 42, .06));
+      opacity: .92;
+      animation: drift linear infinite;
+    }
+    .cloud svg { display: block; }
+    @keyframes drift {
+      from { transform: translateX(-15vw); }
+      to   { transform: translateX(115vw); }
+    }
+    .cloud.c1 { top: 6%;  animation-duration: 90s;  transform: scale(1.0); }
+    .cloud.c2 { top: 18%; animation-duration: 130s; animation-delay: -40s; transform: scale(.7); opacity: .8; }
+    .cloud.c3 { top: 34%; animation-duration: 110s; animation-delay: -70s; transform: scale(1.2); opacity: .85; }
+    .cloud.c4 { top: 52%; animation-duration: 150s; animation-delay: -20s; transform: scale(.85); opacity: .75; }
+    .cloud.c5 { top: 68%; animation-duration: 120s; animation-delay: -90s; transform: scale(1.1); opacity: .7; }
+    .cloud.c6 { top: 80%; animation-duration: 160s; animation-delay: -55s; transform: scale(.65); opacity: .65; }
+
+    /* ── layout ── */
+    .page { position: relative; z-index: 1; }
+    .container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── navbar ── */
+    .nav {
+      position: sticky; top: 0; z-index: 50;
+      backdrop-filter: blur(14px) saturate(140%);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      background: rgba(255, 255, 255, .65);
+      border-bottom: 1px solid rgba(15, 23, 42, .06);
+    }
+    .nav-inner {
+      display: flex; align-items: center; gap: 18px;
+      max-width: 1180px; margin: 0 auto; padding: 12px 24px;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 800; letter-spacing: -0.01em; font-size: 20px;
+    }
+    .brand-logo {
+      width: 36px; height: 36px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, #38BDF8 0%, #818CF8 55%, #A78BFA 100%);
+      display: grid; place-items: center;
+      box-shadow: 0 6px 18px rgba(56, 189, 248, .45), inset 0 1px 0 rgba(255,255,255,.3);
+      flex-shrink: 0;
+    }
+    .nav-links { display: flex; gap: 4px; align-items: center; flex: 1; margin-left: 12px; }
+    .nav-link {
+      padding: 8px 14px; border-radius: 10px; font-weight: 600; font-size: 14.5px;
+      color: var(--ink-2); transition: background .15s, color .15s;
+    }
+    .nav-link:hover { background: rgba(15, 23, 42, .05); color: var(--ink); }
+    .nav-link.active { background: rgba(14, 165, 233, .12); color: var(--primary-2); }
+    .game-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .badge {
+      font-size: 10px; font-weight: 800; letter-spacing: .06em;
+      padding: 2px 7px; border-radius: 999px;
+      background: linear-gradient(135deg, #F59E0B, #EF4444);
+      color: #fff;
+    }
+
+    /* ── buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 9px 16px; border-radius: 12px; font-weight: 600; font-size: 14.5px;
+      border: 1px solid transparent; cursor: pointer; transition: transform .12s, background .15s, box-shadow .15s;
+      text-decoration: none;
+    }
+    .btn-primary { background: var(--ink); color: #fff; box-shadow: 0 2px 6px rgba(15,23,42,.18); }
+    .btn-primary:hover { background: #1E293B; transform: translateY(-1px); }
+    .btn-primary:active { transform: scale(.97); }
+    .btn-sky {
+      background: linear-gradient(135deg, #38BDF8, #6366F1);
+      color: #fff; box-shadow: 0 6px 16px rgba(56, 189, 248, .35);
+      font-weight: 700;
+    }
+    .btn-sky:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(56, 189, 248, .42); }
+    .btn-ghost {
+      background: rgba(255, 255, 255, .7); color: var(--ink); border-color: rgba(15, 23, 42, .08);
+    }
+    .btn-ghost:hover { background: #fff; }
+
+    /* ── cards ── */
+    .card {
+      background: var(--card);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(15, 23, 42, .06);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .06);
+      transition: transform .15s, box-shadow .15s;
+    }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(15, 23, 42, .05), 0 16px 32px rgba(15, 23, 42, .09); }
+
+    /* ── footer ── */
+    .footer {
+      margin-top: 60px; padding: 36px 24px; text-align: center;
+      color: var(--muted); font-size: 13.5px;
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="sky" aria-hidden="true">
+    <div class="cloud c1" style="left:-10vw">
+      <svg width="220" height="80" viewBox="0 0 220 80" fill="#fff"><ellipse cx="60" cy="50" rx="50" ry="28"/><ellipse cx="110" cy="38" rx="42" ry="32"/><ellipse cx="160" cy="50" rx="46" ry="26"/></svg>
+    </div>
+    <div class="cloud c2" style="left:-10vw">
+      <svg width="180" height="70" viewBox="0 0 180 70" fill="#fff"><ellipse cx="50" cy="42" rx="42" ry="24"/><ellipse cx="95" cy="30" rx="38" ry="28"/><ellipse cx="138" cy="42" rx="36" ry="22"/></svg>
+    </div>
+    <div class="cloud c3" style="left:-10vw">
+      <svg width="260" height="90" viewBox="0 0 260 90" fill="#fff"><ellipse cx="70" cy="58" rx="58" ry="30"/><ellipse cx="130" cy="42" rx="50" ry="36"/><ellipse cx="190" cy="58" rx="54" ry="28"/></svg>
+    </div>
+    <div class="cloud c4" style="left:-10vw">
+      <svg width="200" height="76" viewBox="0 0 200 76" fill="#fff"><ellipse cx="55" cy="46" rx="46" ry="26"/><ellipse cx="100" cy="34" rx="40" ry="30"/><ellipse cx="146" cy="46" rx="42" ry="24"/></svg>
+    </div>
+    <div class="cloud c5" style="left:-10vw">
+      <svg width="240" height="84" viewBox="0 0 240 84" fill="#fff"><ellipse cx="64" cy="52" rx="54" ry="28"/><ellipse cx="120" cy="40" rx="46" ry="34"/><ellipse cx="176" cy="52" rx="50" ry="26"/></svg>
+    </div>
+    <div class="cloud c6" style="left:-10vw">
+      <svg width="160" height="64" viewBox="0 0 160 64" fill="#fff"><ellipse cx="44" cy="38" rx="38" ry="22"/><ellipse cx="84" cy="28" rx="34" ry="26"/><ellipse cx="120" cy="38" rx="32" ry="20"/></svg>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="brand">
+        <span class="brand-logo" style="display: none !important;">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <!-- left ear -->
+            <path d="M3 13 L5.5 5 L9 13" fill="white" opacity="0.95"/>
+            <!-- right ear -->
+            <path d="M13 13 L16.5 5 L19 13" fill="white" opacity="0.95"/>
+            <!-- face -->
+            <circle cx="11" cy="15" r="7" fill="white" opacity="0.97"/>
+            <!-- left eye -->
+            <ellipse cx="8.8" cy="14.4" rx="1.15" ry="1.45" fill="#6366F1"/>
+            <circle cx="9.1" cy="13.9" r="0.38" fill="white" opacity="0.8"/>
+            <!-- right eye -->
+            <ellipse cx="13.2" cy="14.4" rx="1.15" ry="1.45" fill="#6366F1"/>
+            <circle cx="13.5" cy="13.9" r="0.38" fill="white" opacity="0.8"/>
+            <!-- nose -->
+            <path d="M10.4 17.2 Q11 17.8 11.6 17.2 Q11 16.7 10.4 17.2Z" fill="#FB7185"/>
+            <!-- mouth -->
+            <path d="M9.8 17.8 Q11 18.6 12.2 17.8" stroke="#F9A8D4" stroke-width="0.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span>CatoCode</span>
+      </a>
+      <div class="nav-links">
+        <a href="/" class="nav-link {% if active=='home' %}active{% endif %}">Home</a>
+        <a href="/explore" class="nav-link {% if active=='explore' %}active{% endif %}">Explore</a>
+        <a href="/codesabotage" class="nav-link game-tag">
+          Code Sabotage <span class="badge">GAME</span>
+        </a>
+      </div>
+      <a href="/new" class="btn btn-sky">+ New Project</a>
+    </div>
+  </nav>
+
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <div>CatoCode · build, publish, share — anonymously</div>
+  </footer>
+</body>
+</html>

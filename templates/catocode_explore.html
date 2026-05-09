@@ -1,0 +1,146 @@
+{% extends "catocode_base.html" %}
+{% set active = 'explore' %}
+{% block title %}Explore · CatoCode{% endblock %}
+
+{% block head %}
+<style>
+  .explore-head {
+    padding: 56px 0 24px; text-align: center;
+  }
+  .explore-head h1 {
+    font-size: clamp(34px, 5.5vw, 54px);
+    margin: 0 0 12px; font-weight: 800; letter-spacing: -0.02em;
+  }
+  .explore-head p { color: var(--ink-2); margin: 0 0 22px; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .search {
+    flex: 1; min-width: 240px;
+    padding: 11px 16px; border-radius: 12px;
+    border: 1px solid var(--line); background: rgba(255, 255, 255, .8);
+    font-size: 14.5px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .search:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(14, 165, 233, .18); }
+  .sort-pills { display: flex; gap: 6px; }
+  .pill {
+    padding: 9px 14px; border-radius: 999px; font-weight: 600; font-size: 13.5px;
+    background: rgba(255, 255, 255, .7); border: 1px solid var(--line);
+    cursor: pointer; transition: background .15s;
+  }
+  .pill.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 18px;
+  }
+
+  .proj-card { display: flex; flex-direction: column; gap: 8px; }
+  .proj-title { font-size: 17px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .proj-desc { color: var(--ink-2); font-size: 14px; line-height: 1.45;
+               display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+               min-height: 40px; }
+  .proj-meta {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 12px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+  .proj-author { font-weight: 600; color: var(--ink-2); }
+  .proj-stars { display: inline-flex; align-items: center; gap: 4px; color: #B45309; font-weight: 700; }
+  .proj-stars .count { color: var(--muted); font-weight: 600; font-size: 12px; margin-left: 2px; }
+  .proj-stars.unrated { color: var(--muted); }
+
+  .empty {
+    grid-column: 1 / -1;
+    text-align: center; padding: 60px 24px; color: var(--muted);
+  }
+  .empty h3 { color: var(--ink); margin: 0 0 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="container">
+  <div class="explore-head">
+    <h1>Explore Projects</h1>
+    <p>Fresh from the cloud — every project is a sandboxed page you can run, read, and star.</p>
+  </div>
+
+  <div class="toolbar">
+    <input id="searchInput" class="search" type="search" placeholder="Search by title, description, or author…" />
+    <div class="sort-pills">
+      <button class="pill active" data-sort="new">Newest</button>
+      <button class="pill" data-sort="stars">Top rated</button>
+    </div>
+  </div>
+
+  <div id="grid" class="grid">
+    {% for p in projects %}
+      <a href="/p/{{ p.id }}" class="card proj-card"
+         data-title="{{ p.title|lower }}"
+         data-desc="{{ (p.description or '')|lower }}"
+         data-author="{{ p.author|lower }}"
+         data-avg="{{ p.average }}"
+         data-count="{{ p.ratings_count }}"
+         data-created="{{ p.created_at }}">
+        <h3 class="proj-title">{{ p.title }}</h3>
+        <p class="proj-desc">{{ p.description or 'No description.' }}</p>
+        <div class="proj-meta">
+          <span class="proj-author">by {{ p.author }}</span>
+          {% if p.ratings_count > 0 %}
+            <span class="proj-stars">★ {{ '%.1f'|format(p.average) }}<span class="count">({{ p.ratings_count }})</span></span>
+          {% else %}
+            <span class="proj-stars unrated">★ —</span>
+          {% endif %}
+        </div>
+      </a>
+    {% else %}
+      <div class="card empty">
+        <h3>No projects yet ☁️</h3>
+        <p>Be the first to publish something.</p>
+        <a href="/new" class="btn btn-sky" style="margin-top:12px;">+ Start a Project</a>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+  const grid = document.getElementById('grid');
+  const searchInput = document.getElementById('searchInput');
+  const pills = document.querySelectorAll('.pill');
+  const cards = Array.from(grid.querySelectorAll('.proj-card'));
+
+  function applyFilter() {
+    const q = searchInput.value.trim().toLowerCase();
+    cards.forEach(c => {
+      const hay = [c.dataset.title, c.dataset.desc, c.dataset.author].join(' ');
+      c.style.display = (!q || hay.includes(q)) ? '' : 'none';
+    });
+  }
+
+  function applySort(mode) {
+    const visible = cards.slice().sort((a, b) => {
+      if (mode === 'stars') {
+        const aHas = Number(a.dataset.count) > 0 ? 0 : 1;
+        const bHas = Number(b.dataset.count) > 0 ? 0 : 1;
+        if (aHas !== bHas) return aHas - bHas;
+        return Number(b.dataset.avg) - Number(a.dataset.avg)
+            || Number(b.dataset.count) - Number(a.dataset.count)
+            || Number(b.dataset.created) - Number(a.dataset.created);
+      }
+      return Number(b.dataset.created) - Number(a.dataset.created);
+    });
+    visible.forEach(c => grid.appendChild(c));
+  }
+
+  searchInput.addEventListener('input', applyFilter);
+  pills.forEach(p => p.addEventListener('click', () => {
+    pills.forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    applySort(p.dataset.sort);
+  }));
+</script>
+{% endblock %}
