@@ -1,0 +1,1528 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Code Sabotage</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+
+  <style>
+    :root { font-family: 'Inter', system-ui, sans-serif; }
+    body { background:#FFFFFF; color:#0F172A; overflow-x: hidden; }
+
+    /* ── panels & buttons ── */
+    .panel { background:#FFFFFFEE; border:1px solid #E5E7EB; border-radius:18px;
+             box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06);
+             backdrop-filter: blur(6px); }
+    .btn-primary { background:#0F172A; color:#fff; border-radius:12px; padding:.7rem 1.15rem;
+                   font-weight:600; transition: transform .12s, background .15s, box-shadow .15s;
+                   box-shadow: 0 2px 6px rgba(15,23,42,.18); display:inline-flex;
+                   align-items:center; justify-content:center; gap:.45rem; }
+    .btn-primary:hover { background:#1E293B; transform: translateY(-1px); }
+    .btn-primary:active { transform: scale(.97); }
+    .btn-primary:disabled { background:#94A3B8; cursor:not-allowed; transform:none; box-shadow:none; }
+    .btn-secondary { background:#F8FAFC; color:#0F172A; border:1px solid #E5E7EB;
+                     border-radius:12px; padding:.6rem 1rem; font-weight:600;
+                     display:inline-flex; align-items:center; justify-content:center; gap:.4rem;
+                     transition: background .15s, transform .12s; }
+    .btn-secondary:hover { background:#F1F5F9; transform: translateY(-1px); }
+    .btn-secondary:active { transform: scale(.97); }
+    .btn-secondary:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+    .btn-danger { background:#DC2626; color:#fff; border-radius:12px; padding:.6rem 1rem;
+                  font-weight:600; display:inline-flex; align-items:center; gap:.4rem; }
+    .btn-fun { background: linear-gradient(135deg, #38BDF8, #6366F1);
+               color:#fff; border-radius:14px; padding:.85rem 1.25rem; font-weight:700;
+               box-shadow: 0 6px 16px rgba(56,189,248,.35);
+               transition: transform .15s, box-shadow .2s;
+               display:inline-flex; align-items:center; gap:.5rem; }
+    .btn-fun:hover { transform: translateY(-2px); box-shadow:0 10px 22px rgba(99,102,241,.4); }
+    .btn-fun:active { transform: scale(.97); }
+    .input { border:1px solid #E5E7EB; border-radius:12px; padding:.65rem .85rem; outline:none;
+             background:#fff; transition: border .15s, box-shadow .15s; }
+    .input:focus { border-color:#0F172A; box-shadow:0 0 0 3px rgba(15,23,42,.06); }
+    .chip { display:inline-flex; align-items:center; gap:.4rem;
+            border:1px solid #E5E7EB; border-radius:9999px; padding:.3rem .7rem;
+            font-size:.78rem; background:#fff; }
+    .swatch { width:.7rem; height:.7rem; border-radius:9999px; flex-shrink:0; }
+    .ico    { width:1rem; height:1rem; flex-shrink:0; }
+    .ico-sm { width:.85rem; height:.85rem; flex-shrink:0; }
+
+    /* sliders */
+    input[type=range] { -webkit-appearance:none; appearance:none; height:6px;
+       background: linear-gradient(90deg, #38BDF8 var(--p,0%), #E5E7EB var(--p,0%));
+       border-radius:9999px; outline:none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px;
+       border-radius:9999px; background:#0F172A; border:2px solid #fff;
+       box-shadow:0 0 0 1px #E5E7EB; cursor:pointer; }
+    input[type=range]:disabled { opacity:.5; }
+
+    /* light console */
+    .console { background:#F8FAFC; border:1px solid #E5E7EB; border-radius:12px;
+               font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size:13px; color:#0F172A; }
+
+    /* remote cursors over the editor */
+    .remote-cursor { position:absolute; width:2px; pointer-events:none; z-index:30; }
+    .remote-cursor .tag { position:absolute; left:0; top:-18px; padding:1px 6px;
+       border-radius:6px; font-size:10.5px; font-weight:600; color:#fff; white-space:nowrap; }
+
+    /* ── sky background (always visible) ── */
+    body { background: linear-gradient(180deg, #BAE6FD 0%, #DBEAFE 55%, #F0F9FF 100%); }
+    .sky { position: fixed; inset:0; z-index:-2;
+           background: linear-gradient(180deg, #BAE6FD 0%, #DBEAFE 55%, #F0F9FF 100%); }
+    .clouds { position: fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; }
+    .cloud { position: absolute; opacity: .9; filter: drop-shadow(0 4px 6px rgba(15,23,42,.05)); }
+    @keyframes drift-r { from { transform: translateX(-260px); }
+                          to  { transform: translateX(110vw); } }
+    @keyframes drift-l { from { transform: translateX(110vw); }
+                          to  { transform: translateX(-260px); } }
+    .drift1 { animation: drift-r 60s linear infinite; }
+    .drift2 { animation: drift-r 90s linear infinite; }
+    .drift3 { animation: drift-l 75s linear infinite; }
+    .drift4 { animation: drift-r 50s linear infinite; }
+
+    /* ── reveal overlay ── */
+    .reveal-host { position: fixed; inset:0; z-index:60; display:flex;
+                   align-items:center; justify-content:center; pointer-events:none;
+                   transition: opacity .8s ease; opacity:0; }
+    .reveal-host.visible { opacity:1; }
+    .reveal-host.fading { opacity:0; }
+    .reveal-card { padding: 4rem 5rem; border-radius: 28px; color:#fff;
+                   font-weight:900; letter-spacing:.08em; font-size:6rem;
+                   text-shadow:0 6px 24px rgba(15,23,42,.35);
+                   transform: scale(.5); animation: pop-in .55s ease-out forwards; }
+    @keyframes pop-in {
+      0%   { transform: scale(.5) rotate(-6deg); opacity:0; }
+      55%  { transform: scale(1.15) rotate(2deg); opacity:1; }
+      100% { transform: scale(1) rotate(0deg); opacity:1; }
+    }
+    .reveal-impostor { background: linear-gradient(135deg, #DC2626, #7F1D1D); }
+    .reveal-crew     { background: linear-gradient(135deg, #16A34A, #065F46); }
+    .reveal-sub { display:block; font-size:1.1rem; font-weight:600; letter-spacing:.2em;
+                  margin-top: 1rem; opacity:.85; }
+
+    /* ── fullscreen vote ── */
+    .vote-host { position: fixed; inset:0; z-index:55; display:none;
+                 align-items:flex-start; justify-content:center; padding:3rem 1rem; overflow-y:auto; }
+    .vote-host.show { display:flex; }
+    .vote-card { background:#FFFFFFEE; border:1px solid #E5E7EB; border-radius:24px;
+                 width:min(900px, 96vw); padding:2rem 2.25rem;
+                 box-shadow: 0 30px 60px rgba(15,23,42,.18); backdrop-filter: blur(8px); }
+    .vote-tile { display:flex; align-items:center; gap:.7rem; padding: .9rem 1.1rem;
+                 border:1px solid #E5E7EB; border-radius:16px; background:#fff;
+                 transition: transform .12s, box-shadow .15s, border .15s; cursor:pointer;
+                 font-weight:600; color:#0F172A; }
+    .vote-tile:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,.08);
+                       border-color:#94A3B8; }
+    .vote-tile.dead { opacity:.35; pointer-events:none; text-decoration: line-through; }
+    .vote-tile.voted { border-color:#0F172A; background:#0F172A; color:#fff; }
+    .vote-skip { width:100%; }
+
+    /* ── ejection scene ── */
+    .scene-host { position: fixed; inset:0; z-index:58; display:none;
+                  align-items:center; justify-content:center; flex-direction:column;
+                  background: linear-gradient(180deg,#BAE6FD 0%, #DBEAFE 50%, #F0F9FF 100%);
+                  overflow:hidden; }
+    .scene-host.show { display:flex; }
+    .scene-faller { position:absolute; left: 50%; top: -160px;
+                    transform: translateX(-50%);
+                    animation: fall 3.6s cubic-bezier(.55,.1,.6,1) forwards; }
+    @keyframes fall {
+      0%   { top:-160px; transform: translateX(-50%) rotate(0deg); }
+      100% { top:110vh;  transform: translateX(-50%) rotate(540deg); }
+    }
+    .scene-typing { z-index:2; max-width: 760px; padding: 1.2rem 1.6rem;
+                    background:#FFFFFFE5; border-radius:16px; font-size:1.6rem;
+                    font-weight:600; color:#0F172A; text-align:center;
+                    box-shadow: 0 14px 28px rgba(15,23,42,.12);
+                    border:1px solid #E5E7EB; line-height:1.4; }
+    .scene-typing::after { content:'▍'; animation: blink .9s step-end infinite;
+                           margin-left:.15ch; color:#0F172A; }
+    @keyframes blink { 50% { opacity:0; } }
+    .scene-sub { margin-top:.75rem; font-size:.95rem; color:#475569; font-weight:500; }
+
+    /* ── end overlay ── */
+    .end-host { position:fixed; inset:0; z-index:62; display:none;
+                align-items:center; justify-content:center;
+                background: linear-gradient(180deg, rgba(15,23,42,.55), rgba(15,23,42,.7)); }
+    .end-host.show { display:flex; }
+
+    /* fade utility */
+    .fade-in { animation: fade .3s ease both; }
+    @keyframes fade { from { opacity:0; transform: translateY(6px); } to { opacity:1; } }
+
+    /* small bump */
+    .bump:hover { transform: translateY(-1px); }
+
+    /* mode-button active state */
+    .mode-btn { transition: all .15s; }
+    .mode-btn.active[data-mode="easy"] {
+      background: linear-gradient(135deg, #34D399, #059669); color:#fff;
+      border-color: transparent; box-shadow: 0 6px 14px rgba(52,211,153,.35); }
+    .mode-btn.active[data-mode="hard"] {
+      background: linear-gradient(135deg, #F97316, #DC2626); color:#fff;
+      border-color: transparent; box-shadow: 0 6px 14px rgba(249,115,22,.35); }
+    .mode-btn:disabled { opacity:.6; cursor:not-allowed; }
+    .mode-btn.active:disabled { opacity:.95; }
+
+    .team-btn { transition: all .15s; }
+    .team-btn.active[data-team="coop"] {
+      background: linear-gradient(135deg, #38BDF8, #6366F1); color:#fff;
+      border-color: transparent; box-shadow: 0 6px 14px rgba(56,189,248,.35); }
+    .team-btn.active[data-team="social"] {
+      background: linear-gradient(135deg, #A78BFA, #DC2626); color:#fff;
+      border-color: transparent; box-shadow: 0 6px 14px rgba(167,139,250,.35); }
+    .team-btn:disabled { opacity:.6; cursor:not-allowed; }
+    .team-btn.active:disabled { opacity:.95; }
+
+    /* sky and clouds are always visible across landing / lobby / game */
+    .panel { background: rgba(255,255,255,.94); }
+    /* during a meeting we hide the floating clouds + remote-cursor SVGs so
+       players' attention stays on the vote / ejection scene */
+    body.in-meeting .clouds,
+    body.in-meeting .remote-cursor { display:none !important; }
+
+    /* ── chat widget ── */
+    .chat-host { position: fixed; bottom: 1rem; right: 1rem; z-index: 90; }
+    .chat-toggle {
+      width: 56px; height: 56px; border-radius: 9999px;
+      background: linear-gradient(135deg, #38BDF8, #6366F1);
+      color: #fff; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 22px rgba(99, 102, 241, .35);
+      border: none; cursor: pointer; position: relative;
+      transition: transform .12s, box-shadow .15s;
+    }
+    .chat-toggle:hover { transform: translateY(-2px);
+      box-shadow: 0 12px 28px rgba(99,102,241,.45); }
+    .chat-toggle:active { transform: scale(.95); }
+    .chat-badge {
+      position: absolute; top: -4px; right: -4px;
+      background: #DC2626; color: #fff; font-size: 11px;
+      border-radius: 9999px; min-width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 6px; font-weight: 700;
+      box-shadow: 0 2px 6px rgba(220,38,38,.4);
+    }
+    .chat-panel {
+      position: fixed; bottom: 5rem; right: 1rem;
+      width: 340px; max-width: calc(100vw - 2rem);
+      height: 460px; max-height: calc(100dvh - 7rem);
+      background: #fff; border: 1px solid #E5E7EB;
+      border-radius: 18px;
+      box-shadow: 0 30px 60px rgba(15, 23, 42, .22);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-head { padding: .65rem .9rem; border-bottom: 1px solid #E5E7EB;
+                 display: flex; align-items: center; justify-content: space-between;
+                 background: #F8FAFC; }
+    .chat-icon-btn {
+      width: 30px; height: 30px; border-radius: 9999px; border: 1px solid #E5E7EB;
+      background: #fff; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background .15s; padding: 0;
+    }
+    .chat-icon-btn:hover { background: #F1F5F9; }
+    .chat-messages {
+      flex: 1; padding: .75rem; overflow-y: auto;
+      display: flex; flex-direction: column; gap: .45rem;
+      background: #FFFFFF; font-size: .875rem;
+      scroll-behavior: smooth;
+    }
+    .chat-input {
+      padding: .55rem; border-top: 1px solid #E5E7EB;
+      display: flex; gap: .45rem; background: #fff;
+    }
+    .chat-input .input { padding:.55rem .7rem; }
+    .chat-input button {
+      padding: .55rem .8rem; border-radius: 10px;
+      background: linear-gradient(135deg, #38BDF8, #6366F1);
+      color: #fff; font-weight: 600; border: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: .35rem;
+      transition: transform .1s, box-shadow .15s;
+    }
+    .chat-input button:hover { transform: translateY(-1px);
+      box-shadow: 0 6px 14px rgba(99,102,241,.35); }
+    .chat-input button:disabled { opacity: .55; cursor: not-allowed; transform:none; }
+    .chat-msg {
+      max-width: 85%;
+      padding: .35rem .65rem; border-radius: 12px;
+      background: #F1F5F9; color: #0F172A;
+      word-wrap: break-word; word-break: break-word; line-height: 1.35;
+    }
+    .chat-msg .author {
+      font-weight: 700; font-size: .72rem;
+      letter-spacing: .02em; line-height: 1;
+    }
+    .chat-msg .text { margin-top: 2px; font-size: .85rem; }
+    .chat-msg.self {
+      background: #0F172A; color: #fff; align-self: flex-end;
+    }
+    .chat-msg.self .author { color: #93C5FD; }
+    .chat-empty {
+      align-self: center; color: #94A3B8;
+      font-size: .8rem; font-style: italic; margin: auto 0; text-align: center;
+    }
+
+    /* hide chat during fullscreen reveal / ejection scene */
+    body.revealing .chat-host,
+    body.scene-active .chat-host { display: none; }
+
+    @media (max-width: 640px) {
+      .chat-host { bottom: .75rem; right: .75rem; }
+      .chat-toggle { width: 50px; height: 50px; }
+      .chat-panel {
+        bottom: 4.5rem; right: .5rem; left: .5rem;
+        width: auto; max-width: none;
+        height: min(70vh, 70dvh);
+        max-height: min(70vh, 70dvh);
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- background sky + clouds (only shown in game) -->
+<div class="sky"></div>
+<div class="clouds" id="clouds-layer"></div>
+
+<!-- ======================= LANDING ======================= -->
+<section id="view-landing" class="min-h-screen flex flex-col items-center justify-center px-6 py-10">
+  <div class="max-w-xl w-full text-center fade-in">
+    <h1 class="text-6xl md:text-7xl font-bold tracking-tight">Code Sabotage</h1>
+    <p class="mt-4 text-slate-500 text-lg">
+      Ten broken functions. One impostor. Fix the build before they sink it.
+    </p>
+
+    <div class="panel mt-10 p-6 text-left">
+      <label class="text-xs uppercase tracking-wide text-slate-500">Display name</label>
+      <input id="player-name" class="input w-full mt-1" maxlength="18"
+             placeholder="e.g. Ada" autocomplete="off" />
+
+      <div class="flex flex-col gap-3 mt-5">
+        <button id="btn-create" class="btn-fun w-full justify-center">
+          <i data-lucide="plus-circle" class="ico"></i> Create Room
+        </button>
+        <div class="flex gap-2 min-w-0">
+          <input id="join-code" class="input flex-1 min-w-0 uppercase tracking-widest text-center font-semibold"
+                 maxlength="4" placeholder="CODE" />
+          <button id="btn-join" class="btn-secondary shrink-0 whitespace-nowrap">
+            <i data-lucide="log-in" class="ico"></i> Join
+          </button>
+        </div>
+      </div>
+      <p id="landing-error" class="hidden mt-3 text-sm text-red-600"></p>
+    </div>
+
+    <p class="mt-6 text-xs text-slate-400">
+      Tip: open multiple tabs to playtest with yourself.
+    </p>
+  </div>
+</section>
+
+<!-- ======================= LOBBY ======================= -->
+<section id="view-lobby" class="hidden min-h-screen px-6 py-8">
+  <div class="max-w-5xl mx-auto">
+    <div class="flex items-start justify-between flex-wrap gap-4">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-500">Room code</p>
+        <div class="flex items-center gap-2 mt-1">
+          <h2 id="lobby-code" class="text-5xl font-bold tracking-widest">----</h2>
+          <button id="btn-copy" class="btn-secondary text-xs">
+            <i data-lucide="copy" class="ico-sm"></i> Copy
+          </button>
+        </div>
+      </div>
+      <button id="btn-leave" class="btn-secondary">
+        <i data-lucide="arrow-left" class="ico-sm"></i> Leave
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+      <div class="panel p-5 md:col-span-2">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold flex items-center gap-2">
+            <i data-lucide="users" class="ico-sm"></i> Players
+          </h3>
+          <span id="lobby-count" class="text-xs text-slate-500">0 / 10</span>
+        </div>
+        <ul id="lobby-players" class="mt-4 space-y-2"></ul>
+      </div>
+
+      <div class="panel p-5">
+        <h3 class="font-semibold flex items-center gap-2">
+          <i data-lucide="settings-2" class="ico-sm"></i> Settings
+        </h3>
+        <p id="lobby-host-note" class="text-xs text-slate-500 mt-1">
+          Only the host can change settings.
+        </p>
+
+        <div class="mt-5 space-y-5">
+          <div>
+            <label class="text-sm flex items-center gap-1.5">
+              <i data-lucide="zap" class="ico-sm"></i> Difficulty
+            </label>
+            <div class="grid grid-cols-2 gap-2 mt-2">
+              <button id="mode-easy" class="mode-btn btn-secondary justify-center" data-mode="easy">
+                <i data-lucide="leaf" class="ico-sm"></i> Easy
+              </button>
+              <button id="mode-hard" class="mode-btn btn-secondary justify-center" data-mode="hard">
+                <i data-lucide="flame" class="ico-sm"></i> Hard
+              </button>
+            </div>
+            <p id="mode-hint" class="text-xs text-slate-500 mt-2">Beginner-friendly bugs.</p>
+          </div>
+
+          <div>
+            <label class="text-sm flex items-center gap-1.5">
+              <i data-lucide="users" class="ico-sm"></i> Game mode
+            </label>
+            <div class="grid grid-cols-2 gap-2 mt-2">
+              <button id="team-coop" class="team-btn btn-secondary justify-center" data-team="coop">
+                <i data-lucide="handshake" class="ico-sm"></i> Co-op
+              </button>
+              <button id="team-social" class="team-btn btn-secondary justify-center" data-team="social">
+                <i data-lucide="swords" class="ico-sm"></i> Sabotage
+              </button>
+            </div>
+            <p id="team-hint" class="text-xs text-slate-500 mt-2">One impostor — vote them out.</p>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between text-sm">
+              <label class="flex items-center gap-1.5"><i data-lucide="timer" class="ico-sm"></i> Game time</label>
+              <span><b id="set-game-time-v">180</b>s</span>
+            </div>
+            <input id="set-game-time" type="range" min="60" max="600" step="15" value="180" class="w-full mt-2" />
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between text-sm">
+              <label class="flex items-center gap-1.5"><i data-lucide="megaphone" class="ico-sm"></i> Meeting time</label>
+              <span><b id="set-meeting-time-v">30</b>s</span>
+            </div>
+            <input id="set-meeting-time" type="range" min="10" max="120" step="5" value="30" class="w-full mt-2" />
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between text-sm">
+              <label class="flex items-center gap-1.5"><i data-lucide="target" class="ico-sm"></i> Impostor char limit</label>
+              <span><b id="set-impostor-v">3</b>/min</span>
+            </div>
+            <input id="set-impostor" type="range" min="1" max="20" step="1" value="3" class="w-full mt-2" />
+          </div>
+        </div>
+
+        <button id="btn-start" class="btn-fun w-full mt-6 justify-center">
+          <i data-lucide="play" class="ico"></i> Start Game
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= GAME ======================= -->
+<section id="view-game" class="hidden min-h-screen flex flex-col">
+  <header class="border-b border-slate-200 bg-white/80 backdrop-blur">
+    <div class="px-5 py-3 flex items-center gap-3 flex-wrap">
+      <div class="flex items-center gap-2">
+        <span class="swatch" style="background:#0F172A"></span>
+        <span class="font-semibold">Code Sabotage</span>
+        <span class="text-slate-300">/</span>
+        <span id="game-room-code" class="text-slate-500 tracking-widest font-semibold">----</span>
+      </div>
+
+      <div class="ml-auto flex items-center gap-2 flex-wrap">
+        <div class="chip"><i data-lucide="timer" class="ico-sm"></i> <span id="game-time-left">3:00</span></div>
+        <div id="next-meeting-pill" class="chip"><i data-lucide="megaphone" class="ico-sm"></i> next meeting <b id="game-next-meeting" class="ml-1">60</b>s</div>
+        <div id="role-pill" class="chip">
+          <span class="swatch" style="background:#16A34A"></span> Crew
+        </div>
+        <div id="sniper-pill" class="chip hidden">
+          <i data-lucide="target" class="ico-sm" style="color:#DC2626"></i>
+          Sniper: <b id="sniper-used">0</b>/<b id="sniper-limit">3</b>
+          <span class="text-slate-400 ml-1">resets in <span id="sniper-reset">60</span>s</span>
+        </div>
+        <button id="btn-sound" class="btn-secondary text-xs" title="Toggle sound">
+          <i id="sound-icon" data-lucide="volume-2" class="ico-sm"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="px-5 pb-3">
+      <div class="flex items-center gap-3 text-xs">
+        <span class="text-slate-500 flex items-center gap-1.5">
+          <i data-lucide="hammer" class="ico-sm"></i> Build status
+        </span>
+        <div class="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+          <div id="build-bar" class="h-full transition-all"
+               style="width:0%; background: linear-gradient(90deg, #38BDF8, #16A34A);"></div>
+        </div>
+        <span class="font-mono"><b id="build-pct">0</b>%</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 grid gap-4 p-4 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px]" style="min-height:0;">
+    <section class="flex flex-col gap-4 min-h-0 min-w-0">
+      <div class="panel p-0 flex-1 flex flex-col min-h-0 relative">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200">
+          <span class="text-xs text-slate-500 flex items-center gap-1.5">
+            <i data-lucide="file-code-2" class="ico-sm"></i> codebase.js
+          </span>
+          <button id="btn-run" class="btn-primary text-sm py-1.5 px-3">
+            <i data-lucide="play" class="ico-sm"></i> Run
+          </button>
+        </div>
+        <div id="editor-host" class="relative flex-1 min-h-0"></div>
+      </div>
+
+      <div class="panel p-0">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200">
+          <span class="text-xs text-slate-500 flex items-center gap-1.5">
+            <i data-lucide="terminal" class="ico-sm"></i> Console
+          </span>
+          <span id="console-summary" class="text-xs text-slate-400">No runs yet.</span>
+        </div>
+        <pre id="console-out" class="console p-3 m-3 overflow-auto" style="max-height:200px;min-height:120px;">Waiting for first run…</pre>
+      </div>
+    </section>
+
+    <aside class="flex flex-col gap-4 min-h-0">
+      <div class="panel p-4">
+        <h4 class="text-xs uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+          <i data-lucide="users" class="ico-sm"></i> Players
+        </h4>
+        <ul id="game-players" class="mt-3 space-y-2"></ul>
+      </div>
+      <div class="panel p-4 overflow-auto" style="min-height:0;">
+        <h4 class="text-xs uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+          <i data-lucide="list-checks" class="ico-sm"></i> Problems (10)
+        </h4>
+        <ol id="problems-list" class="mt-3 space-y-2 text-sm list-decimal list-inside text-slate-700"></ol>
+      </div>
+    </aside>
+  </main>
+</section>
+
+<!-- ======================= REVEAL OVERLAY ======================= -->
+<div id="reveal-host" class="reveal-host">
+  <div id="reveal-card" class="reveal-card reveal-crew">
+    <span id="reveal-text">CREWMATE</span>
+    <span id="reveal-sub" class="reveal-sub">Find the impostor</span>
+  </div>
+</div>
+
+<!-- ======================= FULLSCREEN VOTE ======================= -->
+<div id="vote-host" class="vote-host">
+  <div class="vote-card fade-in">
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-3xl font-extrabold flex items-center gap-2">
+          <i data-lucide="megaphone" class="ico"></i> Code Review
+        </h2>
+        <p class="text-slate-500 text-sm mt-1">
+          Editors locked. Vote out the impostor — or skip.
+        </p>
+      </div>
+      <div class="chip text-base">
+        <i data-lucide="timer" class="ico-sm"></i>
+        <b id="meeting-time-left" class="ml-1">30</b>s
+      </div>
+    </div>
+
+    <div id="vote-tiles" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-5"></div>
+
+    <button id="btn-skip" class="btn-secondary vote-skip mt-3">
+      <i data-lucide="ban" class="ico-sm"></i> Skip vote
+    </button>
+
+    <div id="vote-tally" class="mt-5 text-sm text-slate-600 flex items-center gap-2 flex-wrap"></div>
+  </div>
+</div>
+
+<!-- ======================= EJECTION SCENE ======================= -->
+<div id="scene-host" class="scene-host">
+  <!-- clouds drawn dynamically -->
+  <svg id="scene-faller" class="scene-faller" width="120" height="160" viewBox="0 0 120 160" style="display:none;">
+    <!-- body -->
+    <ellipse cx="60" cy="76" rx="34" ry="44" fill="#0F172A" stroke="#0F172A" stroke-width="4"/>
+    <!-- visor -->
+    <ellipse cx="72" cy="60" rx="22" ry="14" fill="#7DD3FC" stroke="#0F172A" stroke-width="3"/>
+    <!-- backpack -->
+    <rect x="28" y="58" width="14" height="32" rx="6" fill="#0F172A"/>
+    <!-- legs -->
+    <rect x="40" y="118" width="14" height="22" rx="4" fill="#0F172A"/>
+    <rect x="68" y="118" width="14" height="22" rx="4" fill="#0F172A"/>
+  </svg>
+  <div id="scene-typing" class="scene-typing"></div>
+  <div id="scene-sub" class="scene-sub"></div>
+</div>
+
+<!-- ======================= END OVERLAY ======================= -->
+<div id="end-host" class="end-host">
+  <div class="panel p-8 max-w-md w-[92%] text-center fade-in">
+    <div id="end-icon" class="flex justify-center text-5xl mb-2">
+      <i data-lucide="trophy" class="w-14 h-14" style="color:#F59E0B;"></i>
+    </div>
+    <h3 id="end-title" class="text-3xl font-extrabold">Match over</h3>
+    <p id="end-reason" class="text-slate-500 mt-1"></p>
+    <p id="end-impostor" class="mt-3 text-sm"></p>
+    <div class="mt-6 flex gap-2 justify-center">
+      <button id="btn-back-lobby" class="btn-fun">
+        <i data-lucide="rotate-ccw" class="ico"></i> Back to lobby
+      </button>
+      <button id="btn-leave-end" class="btn-secondary">
+        <i data-lucide="log-out" class="ico-sm"></i> Leave
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- meeting result toast (top of screen) -->
+<div id="meeting-result" class="hidden fixed inset-x-0 top-8 z-[70] flex justify-center pointer-events-none">
+  <div class="panel px-5 py-3 text-sm fade-in" id="meeting-result-text"></div>
+</div>
+
+<!-- ======================= LIVE CHAT ======================= -->
+<div id="chat-host" class="chat-host hidden">
+  <button id="chat-toggle" class="chat-toggle" aria-label="Open chat">
+    <i data-lucide="message-circle" style="width:24px;height:24px;"></i>
+    <span id="chat-badge" class="chat-badge hidden">0</span>
+  </button>
+  <div id="chat-panel" class="chat-panel hidden">
+    <div class="chat-head">
+      <span class="font-semibold flex items-center gap-2 text-sm">
+        <i data-lucide="message-circle" class="ico-sm"></i> Chat
+      </span>
+      <button id="chat-close" class="chat-icon-btn" aria-label="Close chat">
+        <i data-lucide="x" class="ico-sm"></i>
+      </button>
+    </div>
+    <div id="chat-messages" class="chat-messages">
+      <div class="chat-empty">No messages yet — say hi!</div>
+    </div>
+    <form id="chat-form" class="chat-input">
+      <input id="chat-text" class="input flex-1 min-w-0" maxlength="300"
+             placeholder="Say something…" autocomplete="off" />
+      <button type="submit" id="chat-send" aria-label="Send">
+        <i data-lucide="send" class="ico-sm"></i>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ======================= JS ======================= -->
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline-SVG icon registry (Lucide-style strokes).  Each `[data-lucide="x"]`
+// element is replaced by its SVG counterpart.  No CDN, no flicker.
+// ─────────────────────────────────────────────────────────────────────────────
+const _SVG = (paths) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" `
+  + `viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" `
+  + `stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+const ICON_DICT = {
+  "play":         _SVG('<polygon points="6 3 20 12 6 21"/>'),
+  "plus-circle":  _SVG('<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/>'),
+  "log-in":       _SVG('<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>'),
+  "log-out":      _SVG('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>'),
+  "arrow-left":   _SVG('<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>'),
+  "copy":         _SVG('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'),
+  "users":        _SVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+  "settings-2":   _SVG('<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'),
+  "timer":        _SVG('<line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/>'),
+  "megaphone":    _SVG('<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'),
+  "target":       _SVG('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+  "crown":        _SVG('<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/>'),
+  "ban":          _SVG('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'),
+  "terminal":     _SVG('<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>'),
+  "file-code-2":  _SVG('<path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m5 12-3 3 3 3"/><path d="m9 18 3-3-3-3"/>'),
+  "list-checks":  _SVG('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>'),
+  "volume-2":     _SVG('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'),
+  "volume-x":     _SVG('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>'),
+  "trophy":       _SVG('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>'),
+  "skull":        _SVG('<circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/>'),
+  "rotate-ccw":   _SVG('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>'),
+  "hammer":       _SVG('<path d="m15 12-8.4 8.4a2.1 2.1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-9-9L9 6l3.5 3.5L9 13l9 9 3.5-3.5z"/>'),
+  "zap":          _SVG('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'),
+  "leaf":         _SVG('<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19.2 2.3c1.7 2.4 2 7.2 0 11.2-1.9 4-4.5 5.2-9.2 5.5"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/>'),
+  "flame":        _SVG('<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>'),
+  "handshake":    _SVG('<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>'),
+  "swords":       _SVG('<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" x2="9" y1="14" y2="18"/><line x1="7" x2="4" y1="17" y2="20"/><line x1="3" x2="5" y1="19" y2="21"/>'),
+  "message-circle": _SVG('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'),
+  "send":         _SVG('<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>'),
+  "x":            _SVG('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+};
+
+function icons(root) {
+  root = root || document;
+  const targets = root.querySelectorAll('[data-lucide]');
+  for (const el of targets) {
+    const name = el.getAttribute("data-lucide");
+    const tpl = ICON_DICT[name];
+    if (!tpl) continue;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = tpl;
+    const svg = wrap.firstElementChild;
+    if (el.className) svg.setAttribute("class", el.className);
+    if (el.getAttribute("style")) svg.setAttribute("style", el.getAttribute("style"));
+    el.replaceWith(svg);
+  }
+}
+window.addEventListener("DOMContentLoaded", () => icons());
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sound (Web Audio, no assets)
+// ─────────────────────────────────────────────────────────────────────────────
+const Sound = (() => {
+  let ctx = null, enabled = true;
+  function ensure() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") ctx.resume();
+  }
+  function tone(freq, dur=.15, type='sine', vol=.18, when=0) {
+    if (!enabled) return;
+    ensure();
+    const t0 = ctx.currentTime + when;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(freq, t0);
+    o.type = type;
+    o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(.001, t0 + dur);
+    o.start(t0); o.stop(t0 + dur);
+  }
+  function sweep(f1, f2, dur=.4, type='sawtooth', vol=.18) {
+    if (!enabled) return;
+    ensure();
+    const t0 = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f1, t0);
+    o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+    o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(.001, t0 + dur);
+    o.start(t0); o.stop(t0 + dur);
+  }
+  return {
+    setEnabled(v) { enabled = v; },
+    isEnabled()   { return enabled; },
+    click()  { tone(720, .05, 'square', .12); },
+    hover()  { tone(540, .03, 'sine', .07); },
+    bell()   { tone(880,.18,'sine',.18,0); tone(660,.28,'sine',.18,.1); tone(990,.18,'sine',.12,.25); },
+    revealCrew()    { tone(523,.12,'triangle',.18,0); tone(659,.12,'triangle',.18,.12); tone(784,.25,'triangle',.18,.24); },
+    revealImpostor(){ tone(220,.18,'sawtooth',.18,0); tone(165,.22,'sawtooth',.18,.18); tone(110,.45,'sawtooth',.2,.4); },
+    eject()  { sweep(900, 110, .9, 'sawtooth', .22); },
+    pass()   { tone(880,.08,'triangle',.16); tone(1318,.12,'triangle',.16,.07); },
+    fail()   { tone(180,.25,'square',.18); tone(140,.3,'square',.18,.15); },
+    win()    { [523,659,784,1046,1318].forEach((f,i)=>tone(f,.18,'triangle',.18,i*.13)); },
+    lose()   { [392,330,262,196].forEach((f,i)=>tone(f,.25,'square',.18,i*.18)); },
+    vote()   { tone(620,.08,'square',.14); tone(820,.08,'square',.14,.06); },
+  };
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live chat
+// ─────────────────────────────────────────────────────────────────────────────
+const Chat = (() => {
+  let isOpen = false;
+  let unread = 0;
+  let hasMessages = false;
+
+  function el(name) { return document.getElementById(name); }
+  function scrollToBottom() {
+    const list = el("chat-messages");
+    list.scrollTop = list.scrollHeight;
+  }
+  function updateBadge() {
+    const b = el("chat-badge");
+    if (unread > 0 && !isOpen) {
+      b.textContent = unread > 99 ? "99+" : String(unread);
+      b.classList.remove("hidden");
+    } else {
+      b.classList.add("hidden");
+    }
+  }
+  function clearEmpty() {
+    if (!hasMessages) {
+      el("chat-messages").innerHTML = "";
+      hasMessages = true;
+    }
+  }
+  function renderMsg(msg) {
+    clearEmpty();
+    const list = el("chat-messages");
+    const isMe = msg.sid === SELF_SID;
+    const div = document.createElement("div");
+    div.className = "chat-msg" + (isMe ? " self" : "");
+    const colorAttr = isMe ? "" : `style="color:${msg.color}"`;
+    div.innerHTML = `
+      <div class="author" ${colorAttr}>${escapeHtml(msg.name)}</div>
+      <div class="text">${escapeHtml(msg.text)}</div>`;
+    list.appendChild(div);
+  }
+  function open() {
+    isOpen = true;
+    el("chat-panel").classList.remove("hidden");
+    unread = 0; updateBadge();
+    setTimeout(() => { el("chat-text").focus(); scrollToBottom(); }, 30);
+  }
+  function close() {
+    isOpen = false;
+    el("chat-panel").classList.add("hidden");
+  }
+  function toggle() { isOpen ? close() : open(); }
+  function reset() {
+    el("chat-messages").innerHTML =
+      '<div class="chat-empty">No messages yet — say hi!</div>';
+    hasMessages = false;
+    unread = 0; updateBadge();
+  }
+  function send(text) {
+    text = (text || "").trim();
+    if (!text) return;
+    socket.emit("chat_msg", { text });
+  }
+  function receive(msg, fromHistory) {
+    renderMsg(msg);
+    if (!fromHistory && !isOpen && msg.sid !== SELF_SID) {
+      unread++; updateBadge();
+      Sound.click();
+    }
+    if (isOpen) scrollToBottom();
+  }
+  function loadHistory(messages) {
+    reset();
+    for (const m of (messages || [])) renderMsg(m);
+    if (messages && messages.length) hasMessages = true;
+  }
+  return { toggle, open, close, send, receive, reset, loadHistory };
+})();
+
+document.getElementById("chat-toggle").addEventListener("click", () => {
+  Sound.click(); Chat.toggle();
+});
+document.getElementById("chat-close").addEventListener("click", () => Chat.close());
+document.getElementById("chat-form").addEventListener("submit", e => {
+  e.preventDefault();
+  const inp = document.getElementById("chat-text");
+  Chat.send(inp.value);
+  inp.value = "";
+  inp.focus();
+});
+// don't let Monaco / arrow keys leak to editor when typing in chat
+document.getElementById("chat-text").addEventListener("keydown", e => e.stopPropagation());
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+const socket = io();
+let SELF_SID = null;
+let ROOM = { code: null, host_sid: null, players: [], settings:{} };
+let ROLE = "crew";
+let IMPOSTOR_LIMIT = 3;
+let editor = null;
+let monacoApi = null;
+let suppressEditorBroadcast = false;
+let pendingEditorCode = null;     // buffered until Monaco is ready
+const remoteCursors = new Map();
+let typingTimer = null;
+let sceneTimer = null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// View helpers
+// ─────────────────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function show(view) {
+  for (const v of ["landing", "lobby", "game"]) {
+    $(`view-${v}`).classList.toggle("hidden", v !== view);
+  }
+  document.body.classList.toggle("in-game", view === "game");
+  // chat is available everywhere except the title screen
+  $("chat-host").classList.toggle("hidden", view === "landing");
+}
+
+// build animated SVG cloud DOM
+function buildClouds() {
+  const layer = $("clouds-layer");
+  layer.innerHTML = "";
+  const tracks = [
+    { y: '6vh',  scale: 1.0, drift: 'drift1', delay: '0s' },
+    { y: '18vh', scale: 0.7, drift: 'drift2', delay: '-30s' },
+    { y: '32vh', scale: 1.2, drift: 'drift3', delay: '-15s' },
+    { y: '52vh', scale: 0.85,drift: 'drift4', delay: '-45s' },
+    { y: '72vh', scale: 1.05,drift: 'drift1', delay: '-20s' },
+    { y: '88vh', scale: 0.8, drift: 'drift2', delay: '-55s' },
+  ];
+  for (const t of tracks) {
+    const c = document.createElement("div");
+    c.className = "cloud " + t.drift;
+    c.style.top = t.y;
+    c.style.transform = `scale(${t.scale})`;
+    c.style.animationDelay = t.delay;
+    c.innerHTML = `
+      <svg width="220" height="100" viewBox="0 0 220 100">
+        <g fill="#FFFFFF">
+          <ellipse cx="60"  cy="60" rx="50" ry="32"/>
+          <ellipse cx="110" cy="46" rx="40" ry="38"/>
+          <ellipse cx="160" cy="60" rx="48" ry="30"/>
+          <ellipse cx="100" cy="66" rx="60" ry="28"/>
+        </g>
+      </svg>`;
+    layer.appendChild(c);
+  }
+}
+buildClouds();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Landing
+// ─────────────────────────────────────────────────────────────────────────────
+$("btn-create").addEventListener("click", () => {
+  Sound.click();
+  const name = $("player-name").value.trim();
+  if (!name) return showLandingError("Enter a name first.");
+  socket.emit("create_room", { name });
+});
+$("btn-join").addEventListener("click", () => {
+  Sound.click();
+  const name = $("player-name").value.trim();
+  const code = $("join-code").value.trim().toUpperCase();
+  if (!name) return showLandingError("Enter a name first.");
+  if (code.length !== 4) return showLandingError("Room code must be 4 letters.");
+  socket.emit("join_room", { name, code });
+});
+$("join-code").addEventListener("input", e => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, "");
+});
+function showLandingError(msg) {
+  Sound.fail();
+  const el = $("landing-error");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 3500);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lobby
+// ─────────────────────────────────────────────────────────────────────────────
+$("btn-copy").addEventListener("click", () => {
+  if (!ROOM.code) return;
+  navigator.clipboard?.writeText(ROOM.code);
+  Sound.click();
+});
+$("btn-leave").addEventListener("click", () => {
+  Sound.click();
+  socket.emit("leave_room");
+  show("landing");
+});
+$("btn-start").addEventListener("click", () => { Sound.click(); socket.emit("start_game"); });
+
+for (const mode of ["easy", "hard"]) {
+  $(`mode-${mode}`).addEventListener("click", () => {
+    if (SELF_SID !== ROOM.host_sid) return;
+    Sound.click();
+    socket.emit("update_settings", { mode });
+  });
+}
+$("team-coop").addEventListener("click", () => {
+  if (SELF_SID !== ROOM.host_sid) return;
+  Sound.click();
+  socket.emit("update_settings", { has_impostor: false });
+});
+$("team-social").addEventListener("click", () => {
+  if (SELF_SID !== ROOM.host_sid) return;
+  Sound.click();
+  socket.emit("update_settings", { has_impostor: true });
+});
+
+const sliders = [
+  ["set-game-time",   "set-game-time-v",   "game_time",     60, 600],
+  ["set-meeting-time","set-meeting-time-v","meeting_time",  10, 120],
+  ["set-impostor",    "set-impostor-v",    "impostor_limit", 1,  20],
+];
+function paintSlider(inp, lo, hi) {
+  const v = parseInt(inp.value, 10);
+  inp.style.setProperty('--p', `${((v - lo) / (hi - lo)) * 100}%`);
+}
+for (const [inp, label, key, lo, hi] of sliders) {
+  $(inp).addEventListener("input", e => {
+    $(label).textContent = e.target.value;
+    paintSlider(e.target, lo, hi);
+  });
+  $(inp).addEventListener("change", e => {
+    const payload = { [key]: parseInt(e.target.value, 10) };
+    socket.emit("update_settings", payload);
+  });
+  paintSlider($(inp), lo, hi);
+}
+
+function renderLobby(state) {
+  ROOM = state;
+  show("lobby");
+  $("lobby-code").textContent = state.code;
+  $("game-room-code").textContent = state.code;
+  $("lobby-count").textContent = `${state.players.length} / 10`;
+  const isHost = SELF_SID === state.host_sid;
+  $("btn-start").disabled = !isHost || state.players.length < 2;
+  $("lobby-host-note").textContent = isHost
+    ? "You are the host." : "Only the host can change settings.";
+  const hasImpostor = state.settings.has_impostor !== false;
+  for (const [inp, label, key, lo, hi] of sliders) {
+    const v = state.settings[key];
+    // meeting_time and impostor_limit are meaningless in co-op mode
+    const irrelevant = !hasImpostor && (key === "meeting_time" || key === "impostor_limit");
+    $(inp).disabled = !isHost || irrelevant;
+    $(inp).value = v;
+    $(label).textContent = v;
+    paintSlider($(inp), lo, hi);
+  }
+  // mode buttons
+  const mode = state.settings.mode || "hard";
+  for (const m of ["easy", "hard"]) {
+    const btn = $(`mode-${m}`);
+    btn.classList.toggle("active", m === mode);
+    btn.disabled = !isHost;
+  }
+  $("mode-hint").textContent = mode === "easy"
+    ? "Beginner-friendly bugs."
+    : "Trickier JS quirks.";
+
+  // team-mode buttons
+  for (const t of ["coop", "social"]) {
+    const btn = $(`team-${t}`);
+    const sel = (t === "coop" && !hasImpostor) || (t === "social" && hasImpostor);
+    btn.classList.toggle("active", sel);
+    btn.disabled = !isHost;
+  }
+  $("team-hint").textContent = hasImpostor
+    ? "One impostor — vote them out."
+    : "No impostor. Just fix the code together.";
+  const ul = $("lobby-players");
+  ul.innerHTML = "";
+  for (const p of state.players) {
+    const li = document.createElement("li");
+    li.className = "flex items-center gap-3 px-3 py-2 rounded-xl border border-slate-200 bg-white";
+    li.innerHTML = `
+      <span class="swatch" style="background:${p.color}"></span>
+      <span class="font-medium">${escapeHtml(p.name)}</span>
+      ${p.is_host ? '<span class="chip ml-2 text-xs"><i data-lucide="crown" class="ico-sm" style="color:#F59E0B"></i> Host</span>' : ''}
+      ${p.sid === SELF_SID ? '<span class="text-slate-400 text-xs ml-auto">you</span>' : ''}
+    `;
+    ul.appendChild(li);
+  }
+  icons();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monaco (lazy)
+// ─────────────────────────────────────────────────────────────────────────────
+function initMonacoOnce() {
+  if (editor) return Promise.resolve(editor);
+  return new Promise(resolve => {
+    require.config({ paths: {
+      vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs"
+    }});
+    require(["vs/editor/editor.main"], () => {
+      monacoApi = monaco;
+      editor = monaco.editor.create($("editor-host"), {
+        value: pendingEditorCode != null ? pendingEditorCode : "// waiting for codebase…",
+        language: "javascript",
+        theme: "vs",
+        automaticLayout: true,
+        fontSize: 13,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        roundedSelection: true,
+        smoothScrolling: true,
+      });
+      pendingEditorCode = null;
+
+      editor.onDidChangeModelContent(() => {
+        repaintRemoteCursors();
+        if (suppressEditorBroadcast) return;
+        socket.emit("code_change", { code: editor.getValue() });
+      });
+      editor.onDidChangeCursorPosition(e => {
+        socket.emit("cursor_move", {
+          line: e.position.lineNumber,
+          column: e.position.column
+        });
+      });
+      editor.onDidScrollChange(() => repaintRemoteCursors());
+      window.addEventListener("resize", repaintRemoteCursors);
+
+      resolve(editor);
+    });
+  });
+}
+function setEditorReadOnly(ro) { if (editor) editor.updateOptions({ readOnly: ro }); }
+function applyRemoteCode(code) {
+  if (!editor) { pendingEditorCode = code; return; }
+  if (editor.getValue() === code) return;
+  const pos = editor.getPosition();
+  const top = editor.getScrollTop();
+  suppressEditorBroadcast = true;
+  editor.setValue(code);
+  if (pos) editor.setPosition(pos);
+  editor.setScrollTop(top);
+  suppressEditorBroadcast = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Remote cursors
+// ─────────────────────────────────────────────────────────────────────────────
+function repaintRemoteCursors() {
+  if (!editor) return;
+  for (const [, c] of remoteCursors) placeCursor(c);
+}
+function placeCursor(c) {
+  if (!editor || !c.line) return;
+  const pos = editor.getScrolledVisiblePosition(new monacoApi.Position(c.line, c.column || 1));
+  if (!pos) { c.el.style.display = "none"; return; }
+  c.el.style.display = "block";
+  c.el.style.left = pos.left + "px";
+  c.el.style.top  = pos.top  + "px";
+  c.el.style.height = (pos.height || 18) + "px";
+  c.el.style.background = c.color;
+}
+function upsertRemoteCursor(sid, line, column) {
+  if (sid === SELF_SID) return;
+  const player = (ROOM.players || []).find(p => p.sid === sid);
+  if (!player) return;
+  let c = remoteCursors.get(sid);
+  if (!c) {
+    const el = document.createElement("div");
+    el.className = "remote-cursor";
+    el.innerHTML = `<span class="tag" style="background:${player.color}">${escapeHtml(player.name)}</span>`;
+    $("editor-host").appendChild(el);
+    c = { el, color: player.color, name: player.name };
+    remoteCursors.set(sid, c);
+  }
+  c.line = line; c.column = column;
+  placeCursor(c);
+}
+function dropRemoteCursor(sid) {
+  const c = remoteCursors.get(sid);
+  if (c) { c.el.remove(); remoteCursors.delete(sid); }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Run button
+// ─────────────────────────────────────────────────────────────────────────────
+$("btn-run").addEventListener("click", () => { Sound.click(); socket.emit("run_request"); });
+socket.on("run_tests", payload => {
+  const code = payload.code;
+  const tests = payload.tests || [];
+  const fnNames = [...new Set(tests.map(t => t.fn_name))];
+  let ns, parseErr = null;
+  try {
+    const wrap = `${code}\n;return { ${fnNames.join(", ")} };`;
+    ns = (new Function(wrap))();
+  } catch (e) { parseErr = String(e && e.message || e); }
+  const results = tests.map(t => {
+    if (parseErr) return { id: t.id, error: "Parse error: " + parseErr };
+    try {
+      const fn = ns[t.fn_name];
+      if (typeof fn !== "function") return { id: t.id, error: `${t.fn_name} is not defined` };
+      const actual = fn(...t.args);
+      return { id: t.id, actual: actual === undefined ? null : actual };
+    } catch (e) { return { id: t.id, error: String(e && e.message || e) }; }
+  });
+  socket.emit("run_results", { results });
+});
+socket.on("run_complete", info => {
+  const { results, passed, total, build_status, by } = info;
+  $("build-bar").style.width = build_status + "%";
+  $("build-pct").textContent = build_status;
+  $("console-summary").textContent = `${passed}/${total} problems passing  ·  build ${build_status}%`;
+  const lines = results.map(r => {
+    if (r.ok) return `[PASS]  Test ${r.index} (${r.fn_name}) — passed (${r.case_count}/${r.case_count})`;
+    if (!r.first_fail) return `[FAIL]  Test ${r.index} (${r.fn_name}) — function not found`;
+    const f = r.first_fail;
+    return `[FAIL]  Test ${r.index} (${r.fn_name}) — ${f.desc}\n         expected ${JSON.stringify(f.expected)}, got ${f.actual_display}`;
+  });
+  if (by !== SELF_SID) {
+    const byName = (ROOM.players.find(p => p.sid === by) || {}).name || "Someone";
+    lines.unshift(`-- run by ${byName} --`);
+  }
+  $("console-out").textContent = lines.join("\n");
+  if (passed === total) Sound.win(); else if (passed > 0) Sound.pass(); else Sound.fail();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Voting (fullscreen)
+// ─────────────────────────────────────────────────────────────────────────────
+let myVote = null;
+$("btn-skip").addEventListener("click", () => {
+  Sound.vote();
+  socket.emit("vote", { target: "__skip__" });
+  myVote = "__skip__";
+  highlightMyVote();
+});
+
+function renderMeeting() {
+  myVote = null;
+  const host = $("vote-tiles");
+  host.innerHTML = "";
+  const meAlive = (ROOM.players.find(p => p.sid === SELF_SID) || {}).alive !== false;
+  for (const p of ROOM.players) {
+    if (p.sid === SELF_SID) continue;
+    const tile = document.createElement("button");
+    tile.className = "vote-tile" + (!p.alive ? " dead" : "");
+    tile.dataset.sid = p.sid;
+    tile.disabled = !meAlive || !p.alive;
+    tile.innerHTML = `
+      <span class="swatch" style="background:${p.color}; width:1rem; height:1rem;"></span>
+      <span class="text-base">${escapeHtml(p.name)}</span>
+      ${p.is_host ? '<span class="chip ml-auto text-xs"><i data-lucide="crown" class="ico-sm" style="color:#F59E0B"></i> Host</span>' : ''}
+    `;
+    tile.addEventListener("click", () => {
+      Sound.vote();
+      socket.emit("vote", { target: p.sid });
+      myVote = p.sid;
+      highlightMyVote();
+    });
+    host.appendChild(tile);
+  }
+  $("btn-skip").disabled = !meAlive;
+  $("vote-tally").textContent = "";
+  icons();
+}
+function highlightMyVote() {
+  for (const t of document.querySelectorAll(".vote-tile")) {
+    t.classList.toggle("voted", t.dataset.sid === myVote);
+  }
+  $("btn-skip").classList.toggle("voted", myVote === "__skip__");
+}
+
+socket.on("meeting_started", info => {
+  Sound.bell();
+  setEditorReadOnly(true);
+  $("btn-run").disabled = true;
+  document.body.classList.add("in-meeting");
+  renderMeeting();
+  $("vote-host").classList.add("show");
+});
+
+socket.on("vote_update", info => {
+  const totals = info.totals || {};
+  const tally = $("vote-tally");
+  tally.innerHTML = "";
+  for (const [sid, count] of Object.entries(totals)) {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    if (sid === "__skip__") {
+      chip.innerHTML = `<i data-lucide="ban" class="ico-sm"></i> Skip · <b>${count}</b>`;
+    } else {
+      const p = ROOM.players.find(p => p.sid === sid);
+      if (!p) continue;
+      chip.innerHTML = `<span class="swatch" style="background:${p.color}"></span> ${escapeHtml(p.name)} · <b>${count}</b>`;
+    }
+    tally.appendChild(chip);
+  }
+  icons();
+});
+
+socket.on("meeting_ended", info => {
+  $("vote-host").classList.remove("show");
+  setEditorReadOnly(false);
+  $("btn-run").disabled = false;
+  // keep `in-meeting` on for the ejection scene — cleared in clearScene()
+  playEjectionScene(info);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ejection scene + typing
+// ─────────────────────────────────────────────────────────────────────────────
+function clearScene() {
+  if (typingTimer) { clearTimeout(typingTimer); typingTimer = null; }
+  if (sceneTimer) { clearTimeout(sceneTimer); sceneTimer = null; }
+  $("scene-host").classList.remove("show");
+  $("scene-typing").textContent = "";
+  $("scene-sub").textContent = "";
+  const f = $("scene-faller");
+  f.style.display = "none";
+  f.style.animation = "none"; void f.offsetWidth; f.style.animation = "";
+  document.body.classList.remove("in-meeting", "scene-active");
+}
+
+function playEjectionScene(info) {
+  clearScene();
+  const ejected = info.ejected;
+  const kind = info.kind;
+
+  let mainText, subText;
+  if (kind === "ejected" && ejected) {
+    if (ejected.was_impostor) {
+      mainText = `${ejected.name} was the impostor.`;
+      subText = "Crew wins!";
+    } else {
+      mainText = `${ejected.name} was not the impostor.`;
+      subText = "Impostor remains.";
+    }
+  } else if (kind === "skipped") {
+    mainText = "No one was ejected (Skipped).";
+    subText = "Impostor remains.";
+  } else if (kind === "tied") {
+    mainText = "No one was ejected (Tie).";
+    subText = "Impostor remains.";
+  } else {
+    mainText = "No one voted.";
+    subText = "Impostor remains.";
+  }
+
+  $("scene-host").classList.add("show");
+  document.body.classList.add("scene-active");
+
+  if (ejected) {
+    const f = $("scene-faller");
+    // colour the ejected player's body
+    f.querySelector("ellipse").setAttribute("fill", ejected.color || "#0F172A");
+    f.style.display = "block";
+    f.style.animation = "fall 3.2s cubic-bezier(.55,.1,.6,1) forwards";
+    Sound.eject();
+  }
+
+  // toast variant for context
+  $("meeting-result-text").textContent = mainText + " " + subText;
+  $("meeting-result").classList.remove("hidden");
+  setTimeout(() => $("meeting-result").classList.add("hidden"), 4500);
+
+  typeOut($("scene-typing"), mainText, 32, () => {
+    $("scene-sub").textContent = subText;
+  });
+
+  sceneTimer = setTimeout(clearScene, ejected ? 4400 : 3200);
+}
+
+function typeOut(el, text, speed, done) {
+  el.textContent = "";
+  let i = 0;
+  function step() {
+    el.textContent = text.slice(0, i);
+    if (i < text.length) {
+      i++;
+      typingTimer = setTimeout(step, speed);
+    } else if (done) { done(); }
+  }
+  step();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reveal screen (IMPOSTOR / CREWMATE)
+// ─────────────────────────────────────────────────────────────────────────────
+function showReveal(role) {
+  const host = $("reveal-host"), card = $("reveal-card");
+  const hasImpostor = (ROOM.settings || {}).has_impostor !== false;
+  if (!hasImpostor) {
+    $("reveal-text").textContent = "BUILD MODE";
+    $("reveal-sub").textContent = "Fix all 10 problems together";
+  } else {
+    $("reveal-text").textContent = role === "impostor" ? "IMPOSTOR" : "CREWMATE";
+    $("reveal-sub").textContent = role === "impostor"
+      ? "Sabotage the build" : "Find the impostor";
+  }
+  card.classList.remove("reveal-impostor", "reveal-crew");
+  card.classList.add(role === "impostor" ? "reveal-impostor" : "reveal-crew");
+  // restart pop animation
+  card.style.animation = "none"; void card.offsetWidth; card.style.animation = "";
+
+  host.classList.remove("fading");
+  host.classList.add("visible");
+  document.body.classList.add("revealing");
+  if (role === "impostor") Sound.revealImpostor(); else Sound.revealCrew();
+
+  setTimeout(() => {
+    host.classList.add("fading");
+    setTimeout(() => {
+      host.classList.remove("visible", "fading");
+      document.body.classList.remove("revealing");
+    }, 800);
+  }, 2400);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Game wiring
+// ─────────────────────────────────────────────────────────────────────────────
+async function enterGame() {
+  show("game");
+  await initMonacoOnce();
+}
+
+socket.on("editor_init", payload => {
+  applyRemoteCode(payload.code || "");
+  $("console-out").textContent = "Build starts at 0%. Hit Run to test.";
+  $("console-summary").textContent = "No runs yet.";
+});
+socket.on("code_update", info => applyRemoteCode(info.code));
+socket.on("code_rejected", info => {
+  applyRemoteCode(info.code);
+  flashSniperBlocked(info.reason);
+});
+socket.on("sniper_status", s => {
+  $("sniper-pill").classList.remove("hidden");
+  $("sniper-used").textContent = s.used;
+  $("sniper-limit").textContent = s.limit;
+  $("sniper-reset").textContent = s.window_resets_in;
+});
+function flashSniperBlocked(msg) {
+  Sound.fail();
+  $("console-out").textContent = "[BLOCKED] " + msg + "\n(Your edit was reverted.)";
+}
+socket.on("cursor_update", c => upsertRemoteCursor(c.sid, c.line, c.column));
+
+socket.on("role_assigned", info => {
+  ROLE = info.role;
+  IMPOSTOR_LIMIT = info.impostor_limit;
+  if (ROLE === "impostor") {
+    $("role-pill").innerHTML =
+      '<span class="swatch" style="background:#DC2626"></span> Impostor';
+    $("sniper-pill").classList.remove("hidden");
+    $("sniper-used").textContent = 0;
+    $("sniper-limit").textContent = IMPOSTOR_LIMIT;
+  } else {
+    $("role-pill").innerHTML =
+      '<span class="swatch" style="background:#16A34A"></span> Crew';
+    $("sniper-pill").classList.add("hidden");
+  }
+  // ensure the game view is visible behind the reveal so it can fade in
+  enterGame();
+  showReveal(ROLE);
+});
+
+socket.on("game_state", state => {
+  ROOM = state;
+  $("game-room-code").textContent = state.code;
+  $("build-bar").style.width = state.build_status + "%";
+  $("build-pct").textContent = state.build_status;
+  $("game-time-left").textContent = fmtTime(state.time_left);
+  $("game-next-meeting").textContent = state.next_meeting_in ?? "—";
+  // hide meeting chip in co-op mode (no meetings ever fire)
+  const hasImpostor = (state.settings || {}).has_impostor !== false;
+  $("next-meeting-pill").classList.toggle("hidden", !hasImpostor);
+  const ol = $("problems-list");
+  ol.innerHTML = "";
+  for (const p of (state.problems || [])) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="font-mono text-slate-900">${escapeHtml(p.fn_name)}</span>
+      <span class="text-slate-500"> — ${escapeHtml(p.desc)}</span>`;
+    ol.appendChild(li);
+  }
+  const ul = $("game-players");
+  ul.innerHTML = "";
+  for (const p of state.players) {
+    const li = document.createElement("li");
+    li.className = "flex items-center gap-2 text-sm "
+      + (p.alive ? "" : "opacity-40 line-through");
+    li.innerHTML = `
+      <span class="swatch" style="background:${p.color}"></span>
+      <span class="font-medium">${escapeHtml(p.name)}</span>
+      ${p.is_host ? '<span class="chip ml-1 text-xs"><i data-lucide="crown" class="ico-sm" style="color:#F59E0B"></i> Host</span>' : ''}
+      ${p.sid === SELF_SID ? '<span class="text-slate-400 text-xs ml-auto">you</span>' : ''}
+    `;
+    ul.appendChild(li);
+    if (!p.alive) dropRemoteCursor(p.sid);
+  }
+  if (state.state === "meeting" && state.meeting_ends_in != null) {
+    $("meeting-time-left").textContent = state.meeting_ends_in;
+  }
+  if ((state.state === "playing" || state.state === "meeting")
+      && $("view-game").classList.contains("hidden")) {
+    enterGame();
+  }
+  icons();
+});
+
+socket.on("game_ended", info => {
+  setEditorReadOnly(true);
+  $("btn-run").disabled = true;
+  $("vote-host").classList.remove("show");
+  clearScene();
+  document.body.classList.remove("in-meeting");
+
+  const hasImpostor = (ROOM.settings || {}).has_impostor !== false;
+  let title, won;
+  if (!hasImpostor) {
+    // co-op terminology: success / failure
+    if (info.winner === "crew") { title = "Build Complete!"; won = true; }
+    else                         { title = "Build Failed";    won = false; }
+  } else {
+    title = info.winner === "crew" ? "Crew wins" : "Impostor wins";
+    won = (info.winner === "crew" && ROLE === "crew")
+       || (info.winner === "impostor" && ROLE === "impostor");
+  }
+  const iconHost = $("end-icon");
+  iconHost.innerHTML = won
+    ? '<i data-lucide="trophy" class="w-14 h-14" style="color:#F59E0B"></i>'
+    : '<i data-lucide="skull" class="w-14 h-14" style="color:#DC2626"></i>';
+  $("end-title").textContent = title;
+  $("end-reason").textContent = info.reason || "";
+  $("end-impostor").innerHTML = (hasImpostor && info.impostor)
+    ? `Impostor was <b>${escapeHtml(info.impostor.name)}</b>.` : "";
+  $("end-host").classList.add("show");
+  icons();
+  if (won) Sound.win(); else Sound.lose();
+});
+
+$("btn-back-lobby").addEventListener("click", () => {
+  Sound.click();
+  $("end-host").classList.remove("show");
+  socket.emit("return_to_lobby");
+});
+$("btn-leave-end").addEventListener("click", () => {
+  Sound.click();
+  $("end-host").classList.remove("show");
+  socket.emit("leave_room");
+  show("landing");
+});
+
+// sound toggle
+$("btn-sound").addEventListener("click", () => {
+  const on = !Sound.isEnabled();
+  Sound.setEnabled(on);
+  $("sound-icon").setAttribute("data-lucide", on ? "volume-2" : "volume-x");
+  icons();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Connection / room lifecycle
+// ─────────────────────────────────────────────────────────────────────────────
+socket.on("connected", info => { SELF_SID = info.sid; });
+socket.on("error_msg", info => showLandingError(info.message));
+socket.on("room_joined", () => { /* lobby_update + chat_history follow */ });
+socket.on("chat_history", info => { Chat.loadHistory(info.messages); });
+socket.on("chat_msg", msg => { Chat.receive(msg, false); });
+socket.on("lobby_update", state => {
+  if (!$("view-game").classList.contains("hidden")) {
+    show("lobby");
+    setEditorReadOnly(false);
+    $("btn-run").disabled = false;
+    $("end-host").classList.remove("show");
+    $("vote-host").classList.remove("show");
+    clearScene();
+    document.body.classList.remove("in-meeting");
+    $("sniper-pill").classList.add("hidden");
+    for (const sid of [...remoteCursors.keys()]) dropRemoteCursor(sid);
+  }
+  renderLobby(state);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// utils
+// ─────────────────────────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+  })[m]);
+}
+function fmtTime(s) {
+  s = Math.max(0, s|0);
+  const m = Math.floor(s / 60), r = s % 60;
+  return `${m}:${r.toString().padStart(2,"0")}`;
+}
+</script>
+</body>
+</html>
