@@ -676,6 +676,7 @@
       <span class="font-semibold flex items-center gap-2 text-sm">
         <i data-lucide="message-circle" class="ico-sm"></i> Chat
       </span>
+      <button id="chat-tts" class="chat-icon-btn" aria-label="Toggle read-aloud" title="Read-aloud ON (click to mute)" style="font-size:15px;line-height:1;">🔊</button>
       <button id="chat-close" class="chat-icon-btn" aria-label="Close chat">
         <i data-lucide="x" class="ico-sm"></i>
       </button>
@@ -865,12 +866,49 @@ const Chat = (() => {
     if (!text) return;
     socket.emit("chat_msg", { text });
   }
+  // ── text-to-speech ──
+  let ttsEnabled = true;
+  let ttsVoice = null;
+  const ttsBtn = el("chat-tts");
+
+  function ttsLoadVoice() {
+    const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+    ttsVoice = voices.find(v => v.lang.startsWith("en-") && !v.name.includes("Google")) // prefer local en
+            || voices.find(v => v.lang.startsWith("en"))
+            || voices[0]
+            || null;
+  }
+  if ("speechSynthesis" in window) {
+    ttsLoadVoice();
+    speechSynthesis.addEventListener("voiceschanged", ttsLoadVoice);
+  }
+
+  ttsBtn.addEventListener("click", () => {
+    ttsEnabled = !ttsEnabled;
+    ttsBtn.textContent = ttsEnabled ? "🔊" : "🔇";
+    ttsBtn.title = ttsEnabled ? "Read-aloud ON (click to mute)" : "Read-aloud OFF (click to enable)";
+    if (!ttsEnabled) speechSynthesis.cancel();
+  });
+
+  function ttsSpeak(msg) {
+    if (!ttsEnabled || msg.sid === SELF_SID) return;
+    if (!("speechSynthesis" in window)) return;
+    speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(msg.name + " says: " + msg.text);
+    utt.rate = 1.1;
+    utt.pitch = 1;
+    utt.volume = 1;
+    if (ttsVoice) utt.voice = ttsVoice;
+    speechSynthesis.speak(utt);
+  }
+
   function receive(msg, fromHistory) {
     renderMsg(msg);
     if (!fromHistory && !isOpen && msg.sid !== SELF_SID) {
       unread++; updateBadge();
       Sound.click();
     }
+    if (!fromHistory) ttsSpeak(msg);
     if (isOpen) scrollToBottom();
   }
   function loadHistory(messages) {

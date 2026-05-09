@@ -265,7 +265,7 @@
   <div class="topbar">
     <a href="/" class="brand">
       <span class="brand-logo">
-        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display: none;">
           <path d="M3 13 L5.5 5 L9 13" fill="white" opacity="0.95"/>
           <path d="M13 13 L16.5 5 L19 13" fill="white" opacity="0.95"/>
           <circle cx="11" cy="15" r="7" fill="white" opacity="0.97"/>
@@ -653,60 +653,48 @@ button:hover { transform: translateY(-1px); }
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // live preview — build a virtual fs of blob URLs and rewrite refs
+  // live preview — fully self-contained srcdoc (no blob URLs)
+  // Sandboxed iframes have a null origin and cannot load blob:// URLs
+  // created by the parent, so we inline everything instead.
   // ─────────────────────────────────────────────────────────────────────
-  let activeBlobUrls = [];
-  function clearBlobs() {
-    activeBlobUrls.forEach(u => URL.revokeObjectURL(u));
-    activeBlobUrls = [];
-  }
-  function newBlobUrl(blob) {
-    const u = URL.createObjectURL(blob);
-    activeBlobUrls.push(u);
-    return u;
-  }
   function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-  function rewriteRefs(text, urlMap) {
-    let out = text;
-    for (const [name, url] of Object.entries(urlMap)) {
-      const r = new RegExp(`(['"\\(\\s=])${escapeRegex(name)}(?=['"\\)\\s>?#])`, 'g');
-      out = out.replace(r, `$1${url}`);
+  function subImages(text) {
+    for (const [name, dataUrl] of Object.entries(state.images)) {
+      text = text.replace(new RegExp(escapeRegex(name), 'g'), dataUrl);
     }
-    return out;
+    return text;
   }
 
   function refreshPreview() {
-    clearBlobs();
-    const urls = {};
+    let html = state.files['index.html'] || '';
 
-    // 1. images
-    for (const [name, dataUrl] of Object.entries(state.images)) {
-      const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-      if (!m) continue;
-      const bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0));
-      urls[name] = newBlobUrl(new Blob([bytes], { type: m[1] }));
-    }
+    // Inline <link rel="stylesheet" href="file.css"> → <style>...</style>
+    html = html.replace(
+      /<link\b[^>]*\brel=["']stylesheet["'][^>]*>/gi,
+      (tag) => {
+        const m = /\bhref=["']([^"']+)["']/.exec(tag);
+        if (!m) return tag;
+        const content = state.files[m[1]];
+        if (content == null) return tag;
+        return `<style>${subImages(content)}</style>`;
+      }
+    );
 
-    // 2. css and js (allow image refs)
-    const mimeFor = (ext) => ({
-      css: 'text/css',
-      js:  'application/javascript',
-      html: 'text/html',
-      htm:  'text/html',
-    }[ext] || 'text/plain');
-    for (const [name, content] of Object.entries(state.files)) {
-      if (name === 'index.html') continue;
-      const ext = name.split('.').pop().toLowerCase();
-      const replaced = rewriteRefs(content, urls);
-      urls[name] = newBlobUrl(new Blob([replaced], { type: mimeFor(ext) }));
-    }
+    // Inline external JS files (script[src]) as inline script tags
+    html = html.replace(
+      /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi,
+      (tag, src) => {
+        const content = state.files[src];
+        if (content == null) return tag;
+        return '<' + 'script>' + subImages(content) + '<' + '/script>';
+      }
+    );
 
-    // 3. index.html (gets all refs replaced)
-    const html = state.files['index.html'] || '';
-    const finalHtml = rewriteRefs(html, urls);
-    const frame = document.getElementById('previewFrame');
-    frame.srcdoc = finalHtml;
+    // Substitute remaining image filename refs (src=, url(), etc.)
+    html = subImages(html);
+
+    document.getElementById('previewFrame').srcdoc = html;
   }
 
   document.getElementById('refreshBtn').addEventListener('click', refreshPreview);
