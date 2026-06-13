@@ -221,7 +221,7 @@ USERS_PATH = os.path.join(
 projects_lock = Lock()
 users_lock = Lock()
 
-PROJECT_MAX_BYTES = 8 * 1024 * 1024
+PROJECT_MAX_BYTES = 24 * 1024 * 1024
 PROJECT_ID_ALPHABET = string.ascii_lowercase + string.digits
 TEXT_FILE_EXTS = {"html", "htm", "css", "js", "json"}
 IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"}
@@ -893,7 +893,7 @@ def _clean_project_payload(payload: dict[str, Any]):
         len(v) for v in clean_images.values()
     )
     if size > PROJECT_MAX_BYTES:
-        return None, ("Project exceeds 8MB.", 413)
+        return None, ("Project exceeds 24MB.", 413)
 
     return {"title": title, "description": description,
             "files": clean_files, "images": clean_images}, None
@@ -1210,6 +1210,23 @@ def hackathon_submission_for(hid: str, user: str) -> dict[str, Any] | None:
     return None
 
 
+def hackathon_delete(hid: str) -> None:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM hackathon_submissions WHERE hackathon_id=%s", (hid,))
+            cur.execute("DELETE FROM hackathon_participants WHERE hackathon_id=%s", (hid,))
+            cur.execute("DELETE FROM hackathons WHERE id=%s", (hid,))
+        conn.commit()
+        return
+    with hackathons_lock:
+        data = _hack_load()
+        data["hackathons"].pop(hid, None)
+        data["participants"].pop(hid, None)
+        data["submissions"].pop(hid, None)
+        _hack_save(data)
+
+
 # --------------------------------------------------------------------------- #
 # Hackathon routes
 # --------------------------------------------------------------------------- #
@@ -1243,6 +1260,7 @@ def api_hackathons_list():
             "ended": now >= h["ends_at"],
             "time_remaining": max(0, int(h["ends_at"] - now)),
             "is_joined": is_joined,
+            "is_host": (user == h["host_id"]) if user else False,
             "submitted_project": sub["project_id"] if sub else None,
             "host_display": (host_user["display_name"] if host_user else h["host_id"]),
         })
@@ -1299,11 +1317,26 @@ def api_hackathon_get(hid):
         "time_remaining": max(0, int(h["ends_at"] - now)),
         "ended": ended,
         "is_joined": (user in parts) if user else False,
+        "is_host": (user == h["host_id"]) if user else False,
         "submitted_project": hackathon_submission_for(hid, user)["project_id"] if (user and hackathon_submission_for(hid, user)) else None,
         "submissions": subs_out,
         "submission_count": len(subs_raw),
         "host_display": (host_user["display_name"] if host_user else h["host_id"]),
     })
+
+
+@app.route("/api/hackathons/<hid>", methods=["DELETE"])
+def api_hackathon_delete(hid):
+    user = current_user()
+    if not user:
+        return jsonify({"error": "Sign in first.", "login": True}), 401
+    h = hackathon_get_one(hid)
+    if not h:
+        return jsonify({"error": "Not found"}), 404
+    if h["host_id"] != user:
+        return jsonify({"error": "Only the host can delete this hackathon."}), 403
+    hackathon_delete(hid)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/hackathons/<hid>/join", methods=["POST"])

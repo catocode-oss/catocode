@@ -133,6 +133,9 @@
           actionHtml = '<button class="btn btn-sky" id="joinBtn">Join</button>';
         }
       }
+      if (h.is_host) {
+        actionHtml += '<button class="btn btn-ghost" id="deleteBtn" style="color:#dc2626;border-color:rgba(220,38,38,.35)">Delete Hackathon</button>';
+      }
     }
     card.innerHTML =
       '<div class="hd-header">'
@@ -164,6 +167,17 @@
     if (joinBtn) joinBtn.addEventListener('click', () => doJoin(joinBtn));
     const openSub = document.getElementById('openSubmit');
     if (openSub) openSub.addEventListener('click', () => openSubmit());
+    const deleteBtn = document.getElementById('deleteBtn');
+    if (deleteBtn) deleteBtn.addEventListener('click', async () => {
+      if (!confirm('Delete this hackathon and all its participants and submissions? This cannot be undone.')) return;
+      deleteBtn.disabled = true; deleteBtn.textContent = 'Deleting…';
+      try {
+        const res = await fetch('/api/hackathons/' + HID, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) { toast(data.error || 'Delete failed', true); deleteBtn.disabled = false; deleteBtn.textContent = 'Delete Hackathon'; return; }
+        window.location.href = '/hackathons';
+      } catch (e) { toast('Delete failed', true); deleteBtn.disabled = false; deleteBtn.textContent = 'Delete Hackathon'; }
+    });
   }
 
   function renderSubs() {

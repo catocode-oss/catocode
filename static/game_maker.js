@@ -24,7 +24,6 @@
   const uid = (p) => (p || 'o') + (_idc++).toString(36) + Math.random().toString(36).slice(2, 5);
 
   // Normalise settings to the stage (camera viewport) / level (full world) model.
-  // Legacy projects only had width/height → those become both stage and level size.
   function migrateSettings(s) {
     s = s || {};
     const w = +s.stageWidth || +s.width || 480;
@@ -33,11 +32,16 @@
     s.stageHeight = Math.max(120, Math.min(960, Math.round(h)));
     s.levelWidth = Math.max(s.stageWidth, Math.min(8000, Math.round(+s.levelWidth || +s.width || s.stageWidth)));
     s.levelHeight = Math.max(s.stageHeight, Math.min(4000, Math.round(+s.levelHeight || +s.height || s.stageHeight)));
-    // Mirror to width/height for any legacy reader (engine canvas == stage size).
     s.width = s.stageWidth; s.height = s.stageHeight;
     if (s.gravity == null) s.gravity = 900;
     if (!s.background) s.background = '#bfe3ff';
     return s;
+  }
+
+  // Migrate DEF.variables from string[] to {name, default}[]
+  function migrateVariables(vars) {
+    if (!Array.isArray(vars)) return [];
+    return vars.map((v) => (typeof v === 'string' ? { name: v, default: 0 } : v));
   }
 
   function starterDef() {
@@ -49,11 +53,31 @@
       scenes: [{
         name: 'Scene 1',
         objects: [
-          { id: uid('c'), name: 'camera', type: 'camera', x: Math.round(W / 2) - 12, y: Math.round(H / 2) - 12,
-            w: 24, h: 24, rotation: 0, color: '#f59e0b', text: '', scripts: [] },
+          { id: uid('c'), name: 'camera', type: 'camera', x: 0, y: 0,
+            w: W, h: H, rotation: 0, color: '#f59e0b', text: '', scripts: [] },
         ],
       }],
     };
+  }
+
+  // Ensure every scene has exactly one camera; if missing, auto-insert sized to stage.
+  function migrateCameras(d) {
+    d.scenes.forEach((sc) => {
+      if (!sc.objects.some((o) => o.type === 'camera')) {
+        sc.objects.unshift({
+          id: uid('c'), name: 'camera', type: 'camera',
+          x: 0, y: 0, w: d.settings.stageWidth, h: d.settings.stageHeight,
+          rotation: 0, color: '#f59e0b', text: '', scripts: [],
+        });
+      } else {
+        // Upgrade old 24×24 placeholder cameras to full viewport size.
+        sc.objects.forEach((o) => {
+          if (o.type === 'camera' && o.w === 24 && o.h === 24) {
+            o.w = d.settings.stageWidth; o.h = d.settings.stageHeight; o.x = 0; o.y = 0;
+          }
+        });
+      }
+    });
   }
 
   let def, assets, projectId, published, title, description;
@@ -71,7 +95,9 @@
     projectId = null; published = false; title = ''; description = '';
   }
   if (!def.variables) def.variables = [];
+  def.variables = migrateVariables(def.variables);
   migrateSettings(def.settings);
+  migrateCameras(def);
 
   const stageW = () => def.settings.stageWidth;
   const stageH = () => def.settings.stageHeight;
@@ -102,6 +128,7 @@
     looks:   { color: '#7C3AED', label: 'Looks' },
     sound:   { color: '#DB2777', label: 'Sound' },
     vars:    { color: '#EA580C', label: 'Variables' },
+    camera:  { color: '#0F766E', label: 'Camera' },
     flow:    { color: '#16A34A', label: 'Game flow' },
   };
 
@@ -139,6 +166,10 @@
     set_var:      { cat: 'vars', pal: 'set variable', label: ['set', { f: 'name' }, 'to', { f: 'value' }], fields: [{ k: 'name', t: 'select', src: 'vars', def: 'score' }, { k: 'value', t: 'text', def: '0' }] },
     change_var:   { cat: 'vars', pal: 'change variable', label: ['change', { f: 'name' }, 'by', { f: 'delta' }], fields: [{ k: 'name', t: 'select', src: 'vars', def: 'score' }, { k: 'delta', t: 'num', def: 1 }] },
 
+    cam_zoom:     { cat: 'camera', pal: 'set zoom', label: ['set camera zoom to', { f: 'scale' }], fields: [{ k: 'scale', t: 'num', def: 1 }] },
+    cam_move:     { cat: 'camera', pal: 'move camera', label: ['move camera to x', { f: 'x' }, 'y', { f: 'y' }], fields: [{ k: 'x', t: 'num', def: 0 }, { k: 'y', t: 'num', def: 0 }] },
+    cam_follow:   { cat: 'camera', pal: 'follow target', label: ['camera follows', { f: 'target' }, 'smoothly'], fields: [{ k: 'target', t: 'select', src: 'objects', def: '' }] },
+
     spawn:        { cat: 'flow', pal: 'spawn', label: ['spawn', { f: 'template' }, 'at x', { f: 'x' }, 'y', { f: 'y' }], fields: [{ k: 'template', t: 'select', src: 'objects', def: '' }, { k: 'x', t: 'num', def: 0 }, { k: 'y', t: 'num', def: 0 }] },
     destroy:      { cat: 'flow', pal: 'destroy', label: ['destroy', { f: 'target' }], fields: [{ k: 'target', t: 'select', src: 'self_objects', def: 'self' }] },
     go_to_scene:  { cat: 'flow', pal: 'go to scene', label: ['go to scene', { f: 'sceneName' }], fields: [{ k: 'sceneName', t: 'select', src: 'scenes', def: '' }] },
@@ -165,7 +196,7 @@
       case 'self_objects': return [['self', 'self']].concat(objNames().map((n) => [n, n]));
       case 'images': return [['', '(none)']].concat(imageAssets().map((n) => [n, n]));
       case 'audio': return [['', '(none)']].concat(audioAssets().map((n) => [n, n]));
-      case 'vars': return (def.variables || []).map((v) => [v, v]).concat([['__new__', '＋ new variable…']]);
+      case 'vars': return (def.variables || []).map((v) => [v.name, v.name]).concat([['__new__', '＋ new variable…']]);
       case 'scenes': return def.scenes.map((s) => [s.name, s.name]);
       default: return [];
     }
@@ -228,8 +259,19 @@
       const LW = Math.max(W, DEF.settings.levelWidth || W);             // level = full scrollable world
       const LH = Math.max(H, DEF.settings.levelHeight || H);
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-      ctx.scale(dpr, dpr);
+      // Render at the canvas's actual on-screen size (× dpr) so vector shapes,
+      // text and sprites stay crisp no matter how large the canvas is displayed.
+      // Backing store keeps the W:H aspect so the CSS object-fit:contain still works.
+      let RS = dpr;
+      function fit() {
+        const r = canvas.getBoundingClientRect();
+        const disp = Math.min(r.width / W, r.height / H) || 1;
+        RS = Math.max(1, disp) * dpr;
+        canvas.width = Math.round(W * RS); canvas.height = Math.round(H * RS);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      }
+      fit();
+      window.addEventListener('resize', () => { fit(); if (RT) render(); });
       const GRAV = DEF.settings.gravity == null ? 800 : DEF.settings.gravity;
       const BG = DEF.settings.background || '#bfe3ff';
       const AEXT = ['mp3', 'wav', 'ogg', 'm4a'];
@@ -276,8 +318,8 @@
       }
       function buildScene(idx) {
         const sc = DEF.scenes[idx];
-        RT = { sceneIdx: idx, objs: [], vars: {}, keys: {}, mouseDown: false, dt: 0, threads: [], ended: false, next: null };
-        (DEF.variables || []).forEach((v) => { RT.vars[v] = 0; });
+        RT = { sceneIdx: idx, objs: [], vars: {}, keys: {}, mouseDown: false, dt: 0, threads: [], ended: false, next: null, cam: { x: 0, y: 0, zoom: 1, follow: null } };
+        (DEF.variables || []).forEach((v) => { const nm = typeof v === 'object' ? v.name : v; const dv = (typeof v === 'object' && v.default != null) ? v.default : 0; RT.vars[nm] = dv; });
         sc.objects.forEach((o) => RT.objs.push(makeInstance(o)));
         RT.objs.slice().forEach((inst) => startHandlers(inst, 'on_start'));
       }
@@ -320,6 +362,9 @@
           case 'go_to_scene': { const i = DEF.scenes.findIndex((s) => s.name === a.sceneName); if (i >= 0) RT.next = i; break; }
           case 'win': endGame(resolveStr(a.message) || 'You win!', true); break;
           case 'lose': endGame(resolveStr(a.message) || 'Game over', false); break;
+          case 'cam_zoom': RT.cam.zoom = Math.max(0.1, +resolveArg(a.scale) || 1); break;
+          case 'cam_move': RT.cam.follow = null; RT.cam.x = +resolveArg(a.x) || 0; RT.cam.y = +resolveArg(a.y) || 0; break;
+          case 'cam_follow': RT.cam.follow = resolveStr(a.target) || null; break;
           default: break;
         }
       }
@@ -399,15 +444,21 @@
       function startLoop() { last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); }
 
       // ---- render ----
-      function clampCam(x, y) {
-        return { x: Math.max(0, Math.min(LW - W, x)), y: Math.max(0, Math.min(LH - H, y)) };
-      }
       function camOffset() {
-        const cam = RT.objs.find((o) => o.type === 'camera');
-        if (!cam) return clampCam(0, 0);
-        const tgt = RT.objs.find((o) => o.name === cam.text) || RT.objs.find((o) => o.grav);
-        if (!tgt) return clampCam(0, 0);
-        return clampCam((tgt.x + tgt.w / 2) - W / 2, (tgt.y + tgt.h / 2) - H / 2);
+        const zoom = RT.cam.zoom || 1;
+        const vw = W / zoom, vh = H / zoom;
+        let cx = RT.cam.x, cy = RT.cam.y;
+        if (RT.cam.follow) {
+          const tgt = findOne(RT.cam.follow);
+          if (tgt) {
+            const tx = tgt.x + tgt.w / 2 - vw / 2;
+            const ty = tgt.y + tgt.h / 2 - vh / 2;
+            cx += (tx - cx) * Math.min(1, RT.dt * 5);
+            cy += (ty - cy) * Math.min(1, RT.dt * 5);
+            RT.cam.x = cx; RT.cam.y = cy;
+          }
+        }
+        return { x: Math.max(0, Math.min(LW - vw, cx)), y: Math.max(0, Math.min(LH - vh, cy)), zoom };
       }
       function drawObj(o) {
         if (o.type === 'camera') return;
@@ -420,20 +471,18 @@
         ctx.restore();
       }
       function render() {
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.setTransform(RS, 0, 0, RS, 0, 0);
         ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
         const cam = camOffset();
-        ctx.save(); ctx.translate(-cam.x, -cam.y);
+        ctx.save(); ctx.scale(cam.zoom, cam.zoom); ctx.translate(-cam.x, -cam.y);
         RT.objs.forEach((o) => { if (o.visible) drawObj(o); });
         ctx.restore();
-        ctx.fillStyle = 'rgba(15,23,42,.85)'; ctx.font = '14px Inter, system-ui, sans-serif'; ctx.textBaseline = 'alphabetic';
-        let yy = 18; Object.keys(RT.vars).forEach((k) => { ctx.fillText(k + ': ' + RT.vars[k], 8, yy); yy += 17; });
       }
 
       // ---- overlays ----
       function overlay(text, sub, onClick) {
         cancelAnimationFrame(raf);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.setTransform(RS, 0, 0, RS, 0, 0);
         if (!RT) { ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H); }
         ctx.fillStyle = 'rgba(15,23,42,.55)'; ctx.fillRect(0, 0, W, H);
         ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
@@ -455,8 +504,9 @@
         const scale = Math.min(r.width / W, r.height / H) || 1;
         const dw = W * scale, dh = H * scale;
         const offX = r.left + (r.width - dw) / 2, offY = r.top + (r.height - dh) / 2;
-        const cam = RT ? camOffset() : { x: 0, y: 0 };
-        return { x: (e.clientX - offX) / scale + cam.x, y: (e.clientY - offY) / scale + cam.y };
+        const cam = RT ? camOffset() : { x: 0, y: 0, zoom: 1 };
+        const zoom = cam.zoom || 1;
+        return { x: (e.clientX - offX) / scale / zoom + cam.x, y: (e.clientY - offY) / scale / zoom + cam.y };
       }
       canvas.addEventListener('pointerdown', (e) => { if (!RT || RT.ended) return; RT.mouseDown = true; const p = ptr(e); for (let i = RT.objs.length - 1; i >= 0; i--) { const o = RT.objs[i]; if (!o.dead && o.visible && p.x >= o.x && p.x <= o.x + o.w && p.y >= o.y && p.y <= o.y + o.h) { startHandlers(o, 'on_click'); break; } } });
       window.addEventListener('pointerup', () => { if (RT) RT.mouseDown = false; });
@@ -487,7 +537,7 @@
   function frameCss(bg) {
     return 'html,body{margin:0;height:100%;background:' + bg + ';overflow:hidden}'
       + '#wrap{position:fixed;inset:0}'
-      + 'canvas{display:block;width:100%;height:100%;object-fit:contain;background:' + bg + ';touch-action:none;image-rendering:pixelated;image-rendering:crisp-edges}';
+      + 'canvas{display:block;width:100%;height:100%;object-fit:contain;background:' + bg + ';touch-action:none}';
   }
   function indexHtml(t) {
     const bg = def.settings.background || '#bfe3ff';
@@ -559,14 +609,29 @@
   $('uploadBtn').addEventListener('click', () => $('assetUpload').click());
   $('assetUpload').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files || []); e.target.value = '';
+    let added = 0;
     for (const file of files) {
-      if (file.size > 4 * 1024 * 1024) { toast('"' + file.name + '" is over 4MB', true); continue; }
-      if (!isImage(file.name) && !isAudio(file.name)) { toast('Unsupported file: ' + file.name, true); continue; }
-      const nm = uniqueAssetName(file.name);
-      assets[nm] = await readDataURL(file);
-      markDirty();
+      const mimeAudio = file.type.startsWith('audio/');
+      const mimeImage = file.type.startsWith('image/');
+      const audio = isAudio(file.name) || mimeAudio;
+      if (!isImage(file.name) && !audio && !mimeImage) { toast('Unsupported file: ' + file.name, true); continue; }
+      // Audio (esp. music) is routinely larger than artwork — give it more room.
+      const limit = audio ? 10 * 1024 * 1024 : 4 * 1024 * 1024;
+      if (file.size > limit) { toast('"' + file.name + '" is over ' + (limit / 1024 / 1024) + 'MB', true); continue; }
+      // Ensure .mp3 and other audio have correct extension for later type detection
+      let safeName = file.name;
+      if (mimeAudio && !isAudio(file.name)) {
+        const ext = file.type.split('/')[1] || 'mp3';
+        safeName = file.name + '.' + ext;
+      }
+      try {
+        const nm = uniqueAssetName(safeName);
+        assets[nm] = await readDataURL(file);
+        added++; markDirty();
+      } catch (err) { toast('Could not read "' + file.name + '"', true); }
     }
-    renderAssets(); renderProps(); toast('Asset(s) added');
+    renderAssets(); renderProps();
+    if (added) toast(added + ' asset' + (added > 1 ? 's' : '') + ' added');
   });
 
   function renderAssets() {
@@ -627,12 +692,19 @@
       text: isText ? 'Text' : '', fontSize: 22,
       physics: { solid: type === 'block', gravity: false, vx: 0, vy: 0 }, scripts: [],
     };
-    if (type === 'camera') { o.w = 24; o.h = 24; o.color = '#f59e0b'; }
+    if (type === 'camera') { o.w = stageW(); o.h = stageH(); o.x = 0; o.y = 0; o.color = '#f59e0b'; }
     objs().push(o); selectObject(o.id); toast(o.name + ' added'); markDirty();
   }
   function uniqueObjName(base) { let i = 1, n; do { n = base + (i === 1 ? '' : i); i++; } while (objNames().includes(n)); return n; }
 
-  document.querySelectorAll('.add-btn').forEach((b) => b.addEventListener('click', () => addObject(b.dataset.add)));
+  document.querySelectorAll('.add-btn').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.add === 'camera') {
+      if (objs().some((o) => o.type === 'camera')) {
+        toast('Camera already added — only one camera per scene.', true); return;
+      }
+    }
+    addObject(b.dataset.add);
+  }));
 
   // ----------------------------------------------------------------------- //
   // PROPERTIES panel
@@ -712,7 +784,7 @@
   // ----------------------------------------------------------------------- //
   const sc = $('sceneCanvas'); const sctx = sc.getContext('2d');
   let drag = null; // { mode:'move'|'resize', id, ox, oy }
-  function applyZoom() { sc.style.width = (levelW() * zoom) + 'px'; sc.style.height = (levelH() * zoom) + 'px'; }
+  function applyZoom() { sc.style.width = Math.round(levelW() * zoom) + 'px'; sc.style.height = Math.round(levelH() * zoom) + 'px'; }
   function imgCache(name) { if (!name) return null; if (imgCache._c && imgCache._c[name]) return imgCache._c[name]; imgCache._c = imgCache._c || {}; const im = new Image(); im.onload = () => renderCanvas(); im.src = assets[name] || ''; imgCache._c[name] = im; return im; }
   // Where the stage-sized camera viewport sits at scene start (mirrors the engine).
   function editorCamRect() {
@@ -727,9 +799,10 @@
     return { x: clamp(cx, 0, Math.max(0, LW - SW)), y: clamp(cy, 0, Math.max(0, LH - SH)), w: SW, h: SH };
   }
   function renderCanvas() {
-    sc.width = levelW(); sc.height = levelH(); applyZoom();
-    sctx.setTransform(1, 0, 0, 1, 0, 0);
-    sctx.fillStyle = def.settings.background || '#bfe3ff'; sctx.fillRect(0, 0, sc.width, sc.height);
+    const dpr = window.devicePixelRatio || 1;
+    sc.width = Math.round(levelW() * dpr); sc.height = Math.round(levelH() * dpr); applyZoom();
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    sctx.fillStyle = def.settings.background || '#bfe3ff'; sctx.fillRect(0, 0, levelW(), levelH());
     // grid
     sctx.strokeStyle = 'rgba(15,23,42,.06)'; sctx.lineWidth = 1;
     for (let x = 0; x <= sc.width; x += 16) { sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, sc.height); sctx.stroke(); }
@@ -786,7 +859,19 @@
     else { o.w = Math.max(8, snapV(p.x - o.x)); o.h = Math.max(8, snapV(p.y - o.y)); }
     renderCanvas();
   });
-  sc.addEventListener('pointerup', () => { if (drag) { drag = null; renderProps(); markDirty(); } });
+  sc.addEventListener('pointerup', () => {
+    if (drag) {
+      if (drag.mode === 'resize') {
+        const o = objs().find((x) => x.id === drag.id);
+        if (o && o.type === 'camera') {
+          def.settings.stageWidth = Math.round(o.w);
+          def.settings.stageHeight = Math.round(o.h);
+          migrateSettings(def.settings);
+        }
+      }
+      drag = null; renderProps(); markDirty();
+    }
+  });
   sc.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/asset')) e.preventDefault(); });
   sc.addEventListener('drop', (e) => {
     const nm = e.dataTransfer.getData('text/asset'); if (!nm) return; e.preventDefault(); const p = ptOf(e); addObject('sprite', p.x, p.y, nm);
@@ -883,7 +968,7 @@
     if (f.t === 'select') {
       const opts = selectSource(f.src);
       const s = makeSelect(opts, a[f.k], (v) => {
-        if (v === '__new__') { const nm = (prompt('New variable name') || '').trim().replace(/[^A-Za-z0-9_]/g, ''); if (nm) { if (!def.variables.includes(nm)) def.variables.push(nm); a[f.k] = nm; } renderScript(); return; }
+        if (v === '__new__') { const nm = (prompt('New variable name') || '').trim().replace(/[^A-Za-z0-9_]/g, ''); if (nm) { if (!def.variables.find((x) => x.name === nm)) def.variables.push({ name: nm, default: 0 }); a[f.k] = nm; } renderScript(); return; }
         a[f.k] = v;
       });
       return s;
@@ -894,14 +979,22 @@
     const toggle = el('button', 'var-toggle' + (isVar ? ' active' : ''), '$');
     toggle.title = isVar ? 'Switch to literal value' : 'Bind to a variable';
     toggle.addEventListener('click', () => {
-      a[f.k] = isVar ? f.def : { __var__: (def.variables[0] || '') };
+      const firstVar = (def.variables[0] && def.variables[0].name) || '';
+      a[f.k] = isVar ? f.def : { __var__: firstVar };
       renderScript(); markDirty();
     });
     let inp;
     if (isVar) {
-      inp = el('input'); inp.type = 'text'; inp.value = a[f.k].__var__; inp.placeholder = 'var'; inp.size = 7;
-      inp.style.fontFamily = 'ui-monospace,monospace'; inp.style.color = '#fbbf24';
-      inp.addEventListener('input', () => { a[f.k] = { __var__: inp.value }; markDirty(); });
+      const opts = [['', '(pick variable)']].concat((def.variables || []).map((v) => [v.name, v.name])).concat([['__new__', '＋ new variable…']]);
+      inp = makeSelect(opts, a[f.k].__var__, (v) => {
+        if (v === '__new__') {
+          const nm = (prompt('New variable name') || '').trim().replace(/[^A-Za-z0-9_]/g, '');
+          if (nm) { if (!def.variables.find((x) => x.name === nm)) def.variables.push({ name: nm, default: 0 }); a[f.k] = { __var__: nm }; }
+          renderScript(); return;
+        }
+        a[f.k] = { __var__: v };
+      });
+      inp.classList.add('var-select');
     } else if (f.t === 'num') {
       inp = el('input'); inp.type = 'number'; inp.value = a[f.k];
       inp.addEventListener('input', () => { a[f.k] = Number(inp.value); markDirty(); });
@@ -920,7 +1013,7 @@
     if (c.kind === 'touching') { span.appendChild(makeSelect(selectSource('objects_any'), c.target || 'any', (v) => { c.target = v; })); }
     else if (c.kind === 'key') { span.appendChild(makeSelect(KEY_OPTS, c.key || 'ArrowUp', (v) => { c.key = v; })); }
     else if (c.kind === 'var') {
-      span.appendChild(makeSelect(selectSource('vars').filter(([v]) => v !== '__new__'), c.var || (def.variables[0] || 'score'), (v) => { c.var = v; }));
+      span.appendChild(makeSelect(selectSource('vars').filter(([v]) => v !== '__new__'), c.var || ((def.variables[0] && def.variables[0].name) || 'score'), (v) => { c.var = v; }));
       span.appendChild(makeSelect(OPS, c.op || '>', (v) => { c.op = v; }));
       const vi = el('input'); vi.type = 'number'; vi.value = c.value == null ? 0 : c.value; vi.addEventListener('input', () => { c.value = Number(vi.value); markDirty(); }); span.appendChild(vi);
     }
@@ -998,6 +1091,77 @@
   }
 
   // ----------------------------------------------------------------------- //
+  // ----------------------------------------------------------------------- //
+  // variables panel
+  // ----------------------------------------------------------------------- //
+  function renderVarsPanel() {
+    const outer = $('varsWrap'); if (!outer) return;
+    if (!def.variables) def.variables = [];
+    const vars = def.variables;
+    outer.innerHTML = '';
+    const wrap = el('div', 'vars-inner'); outer.appendChild(wrap);
+
+    const header = el('div', 'vars-header');
+    const title = el('h3', null, 'Variables');
+    const addBtn = el('button', 'btn-sky vars-add-btn', '+ Add Variable');
+    header.appendChild(title); header.appendChild(addBtn); wrap.appendChild(header);
+
+    const list = el('div', 'vars-list'); wrap.appendChild(list);
+
+    function renderList() {
+      list.innerHTML = '';
+      if (!vars.length) { const empty = el('div', 'vars-empty', 'No variables yet. Add one to get started.'); list.appendChild(empty); return; }
+      vars.forEach((v, i) => {
+        const row = el('div', 'vars-row');
+        const info = el('div', 'vars-info');
+        const nameEl = el('span', 'vars-name', v.name);
+        const defEl = el('span', 'vars-default', 'default: ' + v.default);
+        info.appendChild(nameEl); info.appendChild(defEl);
+        const btns = el('div', 'vars-btns');
+        const editBtn = el('button', 'vars-btn', 'Edit');
+        editBtn.addEventListener('click', () => openEdit(i));
+        const delBtn = el('button', 'vars-btn vars-btn-del', 'Delete');
+        delBtn.addEventListener('click', () => { vars.splice(i, 1); markDirty(); renderList(); });
+        btns.appendChild(editBtn); btns.appendChild(delBtn);
+        row.appendChild(info); row.appendChild(btns); list.appendChild(row);
+      });
+    }
+
+    let editingIdx = -1;
+    const form = el('div', 'vars-form'); form.style.display = 'none'; wrap.appendChild(form);
+    const nameIn = el('input'); nameIn.placeholder = 'Variable name';
+    const defIn = el('input'); defIn.placeholder = 'Default value'; defIn.type = 'text';
+    const saveBtn = el('button', 'vars-add-btn', 'Save');
+    const cancelBtn = el('button', 'vars-btn', 'Cancel');
+    const formBtns = el('div', 'vars-form-btns'); formBtns.appendChild(saveBtn); formBtns.appendChild(cancelBtn);
+    form.appendChild(nameIn); form.appendChild(defIn); form.appendChild(formBtns);
+
+    function openEdit(idx) {
+      editingIdx = idx;
+      const v = vars[idx];
+      nameIn.value = v.name; defIn.value = String(v.default ?? 0);
+      form.style.display = 'flex'; addBtn.style.display = 'none';
+      nameIn.focus();
+    }
+    function openAdd() {
+      editingIdx = -1; nameIn.value = ''; defIn.value = '0';
+      form.style.display = 'flex'; addBtn.style.display = 'none';
+      nameIn.focus();
+    }
+    saveBtn.addEventListener('click', () => {
+      const nm = nameIn.value.trim(); if (!nm) { nameIn.focus(); return; }
+      const defVal = isNaN(Number(defIn.value)) ? defIn.value : Number(defIn.value);
+      if (editingIdx >= 0) { vars[editingIdx] = { name: nm, default: defVal }; }
+      else { vars.push({ name: nm, default: defVal }); }
+      form.style.display = 'none'; addBtn.style.display = '';
+      markDirty(); renderList();
+    });
+    cancelBtn.addEventListener('click', () => { form.style.display = 'none'; addBtn.style.display = ''; });
+    addBtn.addEventListener('click', openAdd);
+
+    renderList();
+  }
+
   // tabs
   // ----------------------------------------------------------------------- //
   function switchTab(t) {
@@ -1005,14 +1169,19 @@
     document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
     $('sceneScroll').style.display = t === 'scene' ? 'flex' : 'none';
     $('logicWrap').classList.toggle('show', t === 'logic');
+    $('varsWrap').classList.toggle('show', t === 'vars');
     $('previewWrap').classList.toggle('show', t === 'preview');
     $('leftScene').style.display = t === 'scene' ? '' : 'none';
     $('leftLogic').style.display = t === 'logic' ? '' : 'none';
-    $('rightPanel').style.display = t === 'preview' ? 'none' : '';
+    const sideless = (t === 'preview' || t === 'vars');
+    $('leftPanel').style.display = sideless ? 'none' : '';
+    $('rightPanel').style.display = sideless ? 'none' : '';
+    $('workspace').classList.toggle('full', sideless);
     $('sceneControls').style.display = t === 'scene' ? '' : 'none';
-    $('stageLabel').textContent = t === 'scene' ? 'Scene' : (t === 'logic' ? 'Logic' : 'Preview');
+    $('stageLabel').textContent = t === 'scene' ? 'Scene' : (t === 'logic' ? 'Logic' : (t === 'vars' ? 'Variables' : 'Preview'));
     if (t === 'scene') renderCanvas();
     if (t === 'logic') { renderPalette(); renderScript(); }
+    if (t === 'vars') renderVarsPanel();
     if (t === 'preview') loadPreview();
   }
   document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
@@ -1023,7 +1192,6 @@
   // game settings modal
   // ----------------------------------------------------------------------- //
   $('settingsBtn').addEventListener('click', () => {
-    $('setW').value = stageW(); $('setH').value = stageH();
     $('setLW').value = levelW(); $('setLH').value = levelH();
     $('setGrav').value = def.settings.gravity; $('setBg').value = def.settings.background || '#bfe3ff';
     $('setModal').classList.add('show');
@@ -1031,8 +1199,6 @@
   $('setCancel').addEventListener('click', () => $('setModal').classList.remove('show'));
   $('setModal').addEventListener('click', (e) => { if (e.target === $('setModal')) $('setModal').classList.remove('show'); });
   $('setSave').addEventListener('click', () => {
-    def.settings.stageWidth = Number($('setW').value) || 480;
-    def.settings.stageHeight = Number($('setH').value) || 320;
     def.settings.levelWidth = Number($('setLW').value) || def.settings.stageWidth;
     def.settings.levelHeight = Number($('setLH').value) || def.settings.stageHeight;
     def.settings.gravity = Math.max(0, Math.min(3000, Number($('setGrav').value) || 0));

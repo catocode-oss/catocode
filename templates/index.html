@@ -292,60 +292,57 @@
 <div class="clouds" id="clouds-layer"></div>
 
 <style>
-  /* ── CatoCode navbar (title-screen only) ── */
-  .cato-nav {
+  /* ── Base navbar styles (identical to catocode_base.html) ── */
+  :root { --ink: #0F172A; --ink-2: #334155; --primary: #0EA5E9; --primary-2: #0284C7; }
+  .nav {
     position: sticky; top: 0; z-index: 50;
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
-    background: rgba(255, 255, 255, .7);
-    border-bottom: 1px solid rgba(15, 23, 42, .06);
+    backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%);
+    background: rgba(255,255,255,.65); border-bottom: 1px solid rgba(15,23,42,.06);
   }
-  .cato-nav-inner {
-    display: flex; align-items: center; gap: 18px;
-    max-width: 1180px; margin: 0 auto; padding: 12px 24px;
-  }
-  .cato-brand {
-    display: flex; align-items: center; gap: 10px;
-    font-weight: 800; letter-spacing: -0.01em; font-size: 20px;
-    color: #0F172A; text-decoration: none;
-  }
-  .cato-brand-logo {
-    width: 36px; height: 36px;
-    border-radius: 11px;
+  .nav-inner { display: flex; align-items: center; gap: 18px; max-width: 1180px; margin: 0 auto; padding: 12px 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.01em; font-size: 20px; color: var(--ink); text-decoration: none; }
+  .brand-logo {
+    width: 36px; height: 36px; border-radius: 11px;
     background: linear-gradient(135deg, #38BDF8 0%, #818CF8 55%, #A78BFA 100%);
     display: grid; place-items: center;
-    box-shadow: 0 6px 18px rgba(56, 189, 248, .45), inset 0 1px 0 rgba(255,255,255,.3);
-    flex-shrink: 0;
+    box-shadow: 0 6px 18px rgba(56,189,248,.45), inset 0 1px 0 rgba(255,255,255,.3); flex-shrink: 0;
   }
-  .cato-nav-links { display: flex; gap: 4px; align-items: center; flex: 1; margin-left: 12px; }
-  .cato-nav-link {
+  .nav-links { display: flex; gap: 4px; align-items: center; flex: 1; margin-left: 12px; }
+  .nav-account { display: flex; gap: 8px; align-items: center; }
+  .nav-link {
     padding: 8px 14px; border-radius: 10px; font-weight: 600; font-size: 14.5px;
-    color: #334155; transition: background .15s, color .15s; text-decoration: none;
-  }
-  .cato-nav-link:hover { background: rgba(15, 23, 42, .05); color: #0F172A; }
-  .cato-nav-link.active { background: rgba(14, 165, 233, .12); color: #0284C7; }
-  .cato-badge {
-    font-size: 10px; font-weight: 800; letter-spacing: .06em;
-    padding: 2px 7px; border-radius: 999px; margin-left: 6px;
-    background: linear-gradient(135deg, #F59E0B, #EF4444);
-    color: #fff;
-  }
-  .cato-newbtn {
+    color: var(--ink-2); transition: background .15s, color .15s; text-decoration: none;
     display: inline-flex; align-items: center; gap: 6px;
+  }
+  .nav-link:hover { background: rgba(15,23,42,.05); color: var(--ink); }
+  .nav-link.active { background: rgba(14,165,233,.12); color: var(--primary-2); }
+  .nav-badge {
+    font-size: 10px; font-weight: 800; letter-spacing: .06em;
+    padding: 2px 7px; border-radius: 999px;
+    background: linear-gradient(135deg, #F59E0B, #EF4444); color: #fff;
+  }
+  .btn-sky-nav {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     padding: 9px 16px; border-radius: 12px; font-weight: 700; font-size: 14.5px;
     background: linear-gradient(135deg, #38BDF8, #6366F1);
-    color: #fff; text-decoration: none;
-    box-shadow: 0 6px 16px rgba(56, 189, 248, .35);
+    color: #fff; text-decoration: none; box-shadow: 0 6px 16px rgba(56,189,248,.35);
     transition: transform .12s, box-shadow .15s;
   }
-  .cato-newbtn:hover { transform: translateY(-1px); }
+  .btn-sky-nav:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(56,189,248,.42); }
+  .btn-ghost-nav {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 9px 16px; border-radius: 12px; font-weight: 600; font-size: 14.5px;
+    background: rgba(255,255,255,.7); color: var(--ink);
+    border: 1px solid rgba(15,23,42,.08); text-decoration: none;
+  }
+  .btn-ghost-nav:hover { background: #fff; }
 </style>
 
-<nav id="cato-nav" class="cato-nav">
-  <div class="cato-nav-inner">
-    <a href="/" class="cato-brand">
-      <span class="cato-brand-logo" style="display: none !important;">
-        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<nav id="cato-nav" class="nav">
+  <div class="nav-inner">
+    <a href="/" class="brand">
+      <span class="brand-logo">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">
           <path d="M3 13 L5.5 5 L9 13" fill="white" opacity="0.95"/>
           <path d="M13 13 L16.5 5 L19 13" fill="white" opacity="0.95"/>
           <circle cx="11" cy="15" r="7" fill="white" opacity="0.97"/>
@@ -359,14 +356,24 @@
       </span>
       <span>CatoCode</span>
     </a>
-    <div class="cato-nav-links">
-      <a href="/" class="cato-nav-link">Home</a>
-      <a href="/explore" class="cato-nav-link">Explore</a>
-      <a href="/codesabotage" class="cato-nav-link active">
-        Code Sabotage <span class="cato-badge">GAME</span>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Home</a>
+      <a href="/explore" class="nav-link">Explore</a>
+      <a href="/hackathons" class="nav-link">Hackathons</a>
+      <a href="/codesabotage" class="nav-link active">
+        Code Sabotage <span class="nav-badge">GAME</span>
       </a>
     </div>
-    <a href="/new" class="cato-newbtn">+ New Project</a>
+    <div class="nav-account">
+      {% if current_user %}
+        <a href="/account" class="nav-link">{{ current_display }}</a>
+        <a href="/logout" class="nav-link">Log out</a>
+        <a href="/new" class="btn-sky-nav">+ New Project</a>
+      {% else %}
+        <a href="/login" class="nav-link">Log in</a>
+        <a href="/signup" class="btn-ghost-nav">Sign up</a>
+      {% endif %}
+    </div>
   </div>
 </nav>
 

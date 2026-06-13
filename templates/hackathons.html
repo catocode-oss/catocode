@@ -217,6 +217,10 @@
       } else {
         actionHtml = '<a class="btn btn-ghost" href="/hackathons/' + h.id + '">View</a>';
       }
+      let deleteHtml = '';
+      if (loggedIn && h.is_host) {
+        deleteHtml = '<button class="btn btn-ghost del-btn" style="color:#dc2626;border-color:rgba(220,38,38,.35)" data-hid="' + h.id + '">Delete</button>';
+      }
       card.innerHTML =
         '<div class="hk-card-top">'
           + '<span class="hk-type-badge ' + h.type + '">' + typeLabel + '</span>'
@@ -229,7 +233,7 @@
           + '<span>by ' + escHtml(h.host_display) + '</span>'
           + '<span>' + h.participant_count + ' participant' + (h.participant_count !== 1 ? 's' : '') + '</span>'
         + '</div>'
-        + '<div class="hk-actions">' + actionHtml + '</div>';
+        + '<div class="hk-actions">' + actionHtml + deleteHtml + '</div>';
       grid.appendChild(card);
       if (!ended && h.time_remaining > 0) {
         let rem = h.time_remaining;
@@ -248,6 +252,20 @@
     document.querySelectorAll('.sub-btn').forEach((btn) => {
       btn.addEventListener('click', () => openSubmit(btn.dataset.hid, btn.dataset.type));
     });
+    document.querySelectorAll('.del-btn').forEach((btn) => {
+      btn.addEventListener('click', () => deleteHackathon(btn.dataset.hid, btn));
+    });
+  }
+
+  async function deleteHackathon(hid, btn) {
+    if (!confirm('Delete this hackathon and all its participants and submissions? This cannot be undone.')) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+    try {
+      const res = await fetch('/api/hackathons/' + hid, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || 'Delete failed', true); if (btn) { btn.disabled = false; btn.textContent = 'Delete'; } return; }
+      toast('Hackathon deleted'); load();
+    } catch (e) { toast('Delete failed', true); if (btn) { btn.disabled = false; btn.textContent = 'Delete'; } }
   }
 
   function escHtml(s) {
