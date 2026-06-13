@@ -1,0 +1,369 @@
+{% extends "catocode_base.html" %}
+{% block title %}Hackathons · CatoCode{% endblock %}
+
+{% block head %}
+<style>
+  .hk-hero {
+    padding: 52px 0 32px;
+    text-align: center;
+  }
+  .hk-hero h1 { margin: 0 0 10px; font-size: 36px; font-weight: 900; letter-spacing: -0.03em; }
+  .hk-hero p  { margin: 0; color: var(--muted); font-size: 16px; }
+  .hk-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    margin-bottom: 24px; flex-wrap: wrap;
+  }
+  .hk-bar h2 { margin: 0; font-size: 20px; font-weight: 800; }
+  .hk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+  .hk-card {
+    background: rgba(255,255,255,.88); backdrop-filter: blur(10px);
+    border: 1px solid rgba(15,23,42,.07); border-radius: 18px; padding: 20px 22px;
+    box-shadow: 0 2px 8px rgba(15,23,42,.06); display: flex; flex-direction: column; gap: 12px;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .hk-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(15,23,42,.1); }
+  .hk-card-top { display: flex; align-items: flex-start; gap: 10px; }
+  .hk-type-badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+    border-radius: 99px; font-size: 11px; font-weight: 800; letter-spacing: .04em;
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .hk-type-badge.html { background: rgba(249,115,22,.12); color: #ea580c; }
+  .hk-type-badge.game { background: rgba(139,92,246,.12); color: #7c3aed; }
+  .hk-card-title { font-size: 17px; font-weight: 800; line-height: 1.25; letter-spacing: -0.01em; flex: 1; }
+  .hk-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; align-items: center; }
+  .hk-status {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700;
+    padding: 3px 9px; border-radius: 99px;
+  }
+  .hk-status.active { background: rgba(16,185,129,.12); color: #059669; }
+  .hk-status.ended  { background: rgba(100,116,139,.1); color: var(--muted); }
+  .hk-status .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .hk-countdown { font-size: 13px; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .hk-countdown.urgent { color: #dc2626; }
+  .hk-desc { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .hk-actions { display: flex; gap: 8px; align-items: center; }
+  .hk-actions .btn { font-size: 13px; padding: 8px 14px; }
+  .hk-empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .hk-empty h3 { margin: 0 0 8px; font-size: 20px; font-weight: 800; color: var(--ink-2); }
+  /* host modal */
+  .hm-bg {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(15,23,42,.45); backdrop-filter: blur(6px);
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .hm-bg.show { display: flex; }
+  .hm {
+    width: min(500px,100%); background: rgba(255,255,255,.96);
+    backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid rgba(15,23,42,.08); border-radius: 22px; padding: 28px;
+    box-shadow: 0 30px 80px rgba(15,23,42,.3);
+  }
+  .hm h2 { margin: 0 0 18px; font-size: 22px; font-weight: 800; }
+  .hm .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .hm .field label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
+  .hm .field input, .hm .field textarea, .hm .field select {
+    padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line);
+    font-family: inherit; font-size: 14px; background: #F8FAFC; outline: none;
+  }
+  .hm .field input:focus, .hm .field textarea:focus, .hm .field select:focus {
+    border-color: var(--primary); box-shadow: 0 0 0 3px rgba(14,165,233,.16);
+  }
+  .hm .type-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hm .type-opt {
+    padding: 12px; border-radius: 12px; border: 2px solid var(--line);
+    cursor: pointer; text-align: center; font-weight: 700; font-size: 13.5px;
+    transition: border-color .14s, background .14s;
+  }
+  .hm .type-opt.selected { border-color: var(--primary); background: rgba(14,165,233,.08); color: var(--primary-2); }
+  .hm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+  /* submit modal */
+  .sub-list { list-style: none; margin: 12px 0 0; padding: 0; max-height: 260px; overflow-y: auto; }
+  .sub-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+    cursor: pointer; border: 1.5px solid var(--line); margin-bottom: 8px;
+    transition: border-color .12s, background .12s;
+  }
+  .sub-item:hover { border-color: var(--primary); background: rgba(14,165,233,.06); }
+  .sub-item.selected { border-color: var(--primary); background: rgba(14,165,233,.1); }
+  .sub-item-title { font-weight: 700; font-size: 14px; flex: 1; }
+  .sub-item-type { font-size: 11px; color: var(--muted); }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; background: #0F172A; color: #fff; font-size: 13.5px; font-weight: 600; opacity: 0; transition: opacity .2s; z-index: 999; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #DC2626; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="hk-hero">
+    <h1>Hackathons</h1>
+    <p>Build a game or HTML project in a timed challenge. Join one or host your own.</p>
+  </div>
+
+  <div class="hk-bar">
+    <h2 id="hackathonCount">Loading…</h2>
+    {% if current_user %}
+    <button class="btn btn-sky" id="hostBtn">+ Host a Hackathon</button>
+    {% else %}
+    <a href="/login?next=/hackathons" class="btn btn-ghost">Sign in to host</a>
+    {% endif %}
+  </div>
+
+  <div class="hk-grid" id="hackGrid"></div>
+</div>
+
+<!-- Host modal -->
+{% if current_user %}
+<div class="hm-bg" id="hostModal">
+  <div class="hm">
+    <h2>Host a Hackathon</h2>
+    <div class="field">
+      <label>Title</label>
+      <input id="hmTitle" type="text" maxlength="80" placeholder="My Awesome Hackathon" />
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea id="hmDesc" maxlength="500" rows="3" placeholder="What will participants build?"></textarea>
+    </div>
+    <div class="field">
+      <label>Type</label>
+      <div class="type-toggle">
+        <div class="type-opt selected" data-type="html" id="typeHtml">HTML Project</div>
+        <div class="type-opt" data-type="game" id="typeGame">Game</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Duration (minutes)</label>
+      <input id="hmDuration" type="number" value="60" min="5" max="10080" />
+    </div>
+    <div class="hm-actions">
+      <button class="btn btn-ghost" id="hmCancel">Cancel</button>
+      <button class="btn btn-sky" id="hmCreate">Create Hackathon</button>
+    </div>
+  </div>
+</div>
+
+<!-- Submit modal -->
+<div class="hm-bg" id="submitModal">
+  <div class="hm">
+    <h2 id="submitModalTitle">Submit a Project</h2>
+    <p style="color:var(--muted);font-size:14px;margin:0 0 4px">Pick one of your published projects to submit.</p>
+    <ul class="sub-list" id="subList"></ul>
+    <div class="hm-actions" style="margin-top:14px">
+      <button class="btn btn-ghost" id="subCancel">Cancel</button>
+      <button class="btn btn-sky" id="subConfirm" disabled>Submit</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function () {
+  const loggedIn = {{ ('true' if current_user else 'false') }};
+  let hackathons = [];
+  let timers = {};
+  let selectedType = 'html';
+  let submitHid = null, selectedProjectId = null;
+
+  let toastTimer;
+  function toast(msg, err) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.toggle('error', !!err); t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+
+  function fmt(secs) {
+    if (secs <= 0) return 'Ended';
+    const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600),
+          m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById('hackGrid');
+    const count = document.getElementById('hackathonCount');
+    count.textContent = hackathons.length + ' hackathon' + (hackathons.length !== 1 ? 's' : '');
+    if (!hackathons.length) {
+      grid.innerHTML = '<div class="hk-empty"><h3>No hackathons yet</h3><p>Be the first to host one!</p></div>';
+      return;
+    }
+    Object.values(timers).forEach(clearInterval);
+    timers = {};
+    grid.innerHTML = '';
+    hackathons.forEach((h) => {
+      const card = document.createElement('div');
+      card.className = 'hk-card';
+      card.dataset.hid = h.id;
+      const ended = h.ended;
+      const typeLabel = h.type === 'game' ? 'Game' : 'HTML';
+      const desc = h.description ? '<p class="hk-desc">' + escHtml(h.description.slice(0, 160)) + '</p>' : '';
+      let actionHtml = '';
+      if (loggedIn) {
+        if (ended) {
+          actionHtml = '<a class="btn btn-ghost" href="/hackathons/' + h.id + '">View results</a>';
+        } else if (h.submitted_project) {
+          actionHtml = '<a class="btn btn-ghost" href="/hackathons/' + h.id + '">View</a>'
+            + '<button class="btn btn-sky sub-btn" data-hid="' + h.id + '" data-type="' + h.type + '">Re-submit</button>';
+        } else if (h.is_joined) {
+          actionHtml = '<button class="btn btn-sky sub-btn" data-hid="' + h.id + '" data-type="' + h.type + '">Submit</button>';
+        } else {
+          actionHtml = '<button class="btn btn-sky join-btn" data-hid="' + h.id + '">Join</button>';
+        }
+      } else {
+        actionHtml = '<a class="btn btn-ghost" href="/hackathons/' + h.id + '">View</a>';
+      }
+      card.innerHTML =
+        '<div class="hk-card-top">'
+          + '<span class="hk-type-badge ' + h.type + '">' + typeLabel + '</span>'
+          + '<div class="hk-card-title">' + escHtml(h.title) + '</div>'
+        + '</div>'
+        + desc
+        + '<div class="hk-meta">'
+          + '<span class="hk-status ' + (ended ? 'ended' : 'active') + '"><span class="dot"></span>' + (ended ? 'Ended' : 'Active') + '</span>'
+          + (ended ? '' : '<span class="hk-countdown' + (h.time_remaining < 300 ? ' urgent' : '') + '" id="cd-' + h.id + '">' + fmt(h.time_remaining) + '</span>')
+          + '<span>by ' + escHtml(h.host_display) + '</span>'
+          + '<span>' + h.participant_count + ' participant' + (h.participant_count !== 1 ? 's' : '') + '</span>'
+        + '</div>'
+        + '<div class="hk-actions">' + actionHtml + '</div>';
+      grid.appendChild(card);
+      if (!ended && h.time_remaining > 0) {
+        let rem = h.time_remaining;
+        timers[h.id] = setInterval(() => {
+          rem--;
+          const el = document.getElementById('cd-' + h.id);
+          if (el) { el.textContent = fmt(rem); el.classList.toggle('urgent', rem < 300); }
+          if (rem <= 0) { clearInterval(timers[h.id]); load(); }
+        }, 1000);
+      }
+    });
+    // attach join / submit handlers
+    document.querySelectorAll('.join-btn').forEach((btn) => {
+      btn.addEventListener('click', () => joinHackathon(btn.dataset.hid, btn));
+    });
+    document.querySelectorAll('.sub-btn').forEach((btn) => {
+      btn.addEventListener('click', () => openSubmit(btn.dataset.hid, btn.dataset.type));
+    });
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function load() {
+    try {
+      const res = await fetch('/api/hackathons');
+      hackathons = await res.json();
+      renderGrid();
+    } catch (e) { document.getElementById('hackathonCount').textContent = 'Failed to load'; }
+  }
+
+  async function joinHackathon(hid, btn) {
+    btn.disabled = true; btn.textContent = 'Joining…';
+    try {
+      const res = await fetch('/api/hackathons/' + hid + '/join', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || 'Join failed', true); btn.disabled = false; btn.textContent = 'Join'; return; }
+      toast('Joined!'); load();
+    } catch (e) { toast('Join failed', true); btn.disabled = false; btn.textContent = 'Join'; }
+  }
+
+  // Host modal
+  {% if current_user %}
+  const hostModal = document.getElementById('hostModal');
+  document.getElementById('hostBtn').addEventListener('click', () => hostModal.classList.add('show'));
+  document.getElementById('hmCancel').addEventListener('click', () => hostModal.classList.remove('show'));
+  hostModal.addEventListener('click', (e) => { if (e.target === hostModal) hostModal.classList.remove('show'); });
+
+  document.querySelectorAll('.type-opt').forEach((opt) => {
+    opt.addEventListener('click', () => {
+      selectedType = opt.dataset.type;
+      document.querySelectorAll('.type-opt').forEach((o) => o.classList.toggle('selected', o === opt));
+    });
+  });
+
+  document.getElementById('hmCreate').addEventListener('click', async () => {
+    const title = document.getElementById('hmTitle').value.trim();
+    if (!title) { toast('Title is required', true); return; }
+    const btn = document.getElementById('hmCreate');
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try {
+      const res = await fetch('/api/hackathons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description: document.getElementById('hmDesc').value.trim(),
+          type: selectedType,
+          duration: parseInt(document.getElementById('hmDuration').value) || 60,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || 'Failed', true); btn.disabled = false; btn.textContent = 'Create Hackathon'; return; }
+      hostModal.classList.remove('show'); toast('Hackathon created!'); load();
+    } catch (e) { toast('Failed', true); btn.disabled = false; btn.textContent = 'Create Hackathon'; }
+  });
+
+  // Submit modal
+  const submitModal = document.getElementById('submitModal');
+  document.getElementById('subCancel').addEventListener('click', () => submitModal.classList.remove('show'));
+  submitModal.addEventListener('click', (e) => { if (e.target === submitModal) submitModal.classList.remove('show'); });
+
+  async function openSubmit(hid, htype) {
+    submitHid = hid; selectedProjectId = null;
+    document.getElementById('subConfirm').disabled = true;
+    document.getElementById('submitModalTitle').textContent = 'Submit a ' + (htype === 'game' ? 'Game' : 'HTML Project');
+    const list = document.getElementById('subList');
+    list.innerHTML = '<li style="color:var(--muted);font-size:13px;padding:8px">Loading your projects…</li>';
+    submitModal.classList.add('show');
+    try {
+      const allProjects = await (await fetch('/api/projects/mine')).json().catch(() => []);
+      const myProjects = allProjects.filter((p) => p.type === htype && p.published);
+      list.innerHTML = '';
+      if (!myProjects.length) {
+        list.innerHTML = '<li style="color:var(--muted);font-size:13px;padding:8px">No published ' + (htype === 'game' ? 'game' : 'HTML') + ' projects found.</li>';
+        return;
+      }
+      myProjects.forEach((p) => {
+        const li = document.createElement('li');
+        li.className = 'sub-item';
+        li.dataset.pid = p.id;
+        li.innerHTML = '<span class="sub-item-title">' + escHtml(p.title) + '</span><span class="sub-item-type">' + escHtml(p.type) + '</span>';
+        li.addEventListener('click', () => {
+          document.querySelectorAll('.sub-item').forEach((x) => x.classList.remove('selected'));
+          li.classList.add('selected');
+          selectedProjectId = p.id;
+          document.getElementById('subConfirm').disabled = false;
+        });
+        list.appendChild(li);
+      });
+    } catch (e) {
+      list.innerHTML = '<li style="color:#dc2626;font-size:13px;padding:8px">Failed to load projects.</li>';
+    }
+  }
+
+  document.getElementById('subConfirm').addEventListener('click', async () => {
+    if (!selectedProjectId || !submitHid) return;
+    const btn = document.getElementById('subConfirm');
+    btn.disabled = true; btn.textContent = 'Submitting…';
+    try {
+      const res = await fetch('/api/hackathons/' + submitHid + '/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: selectedProjectId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || 'Submit failed', true); btn.disabled = false; btn.textContent = 'Submit'; return; }
+      submitModal.classList.remove('show'); toast('Submitted!'); load();
+    } catch (e) { toast('Submit failed', true); btn.disabled = false; btn.textContent = 'Submit'; }
+  });
+  {% endif %}
+
+  load();
+})();
+</script>
+{% endblock %}

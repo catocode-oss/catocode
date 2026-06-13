@@ -44,25 +44,13 @@
     const W = 480, H = 320;
     return {
       settings: { stageWidth: W, stageHeight: H, levelWidth: W, levelHeight: H, width: W, height: H, gravity: 900, background: '#bfe3ff' },
-      variables: ['score', 'lives'],
+      variables: [],
       startScene: 0,
       scenes: [{
         name: 'Scene 1',
         objects: [
-          { id: uid('g'), name: 'ground', type: 'block', x: 0, y: H - 24, w: W, h: 24,
-            rotation: 0, color: '#6b8f3a', physics: { solid: true, gravity: false, vx: 0, vy: 0 }, scripts: [] },
-          { id: uid('p'), name: 'player', type: 'block', x: 40, y: H - 24 - 44, w: 32, h: 44,
-            rotation: 0, color: '#2563eb',
-            physics: { solid: false, gravity: true, vx: 0, vy: 0 },
-            scripts: [
-              { op: 'on_start', args: {}, children: [
-                { op: 'forever', args: {}, children: [
-                  { op: 'if', args: { cond: { kind: 'key', key: 'ArrowLeft' } }, children: [ { op: 'change_x', args: { n: -3 }, children: [] } ] },
-                  { op: 'if', args: { cond: { kind: 'key', key: 'ArrowRight' } }, children: [ { op: 'change_x', args: { n: 3 }, children: [] } ] },
-                ] },
-              ] },
-              { op: 'on_key', args: { key: 'ArrowUp' }, children: [ { op: 'jump', args: { power: 380 }, children: [] } ] },
-            ] },
+          { id: uid('c'), name: 'camera', type: 'camera', x: Math.round(W / 2) - 12, y: Math.round(H / 2) - 12,
+            w: 24, h: 24, rotation: 0, color: '#f59e0b', text: '', scripts: [] },
         ],
       }],
     };
@@ -82,7 +70,7 @@
     def = starterDef();
     projectId = null; published = false; title = ''; description = '';
   }
-  if (!def.variables) def.variables = ['score', 'lives'];
+  if (!def.variables) def.variables = [];
   migrateSettings(def.settings);
 
   const stageW = () => def.settings.stageWidth;
@@ -239,7 +227,9 @@
       const H = DEF.settings.stageHeight || DEF.settings.height || 320;
       const LW = Math.max(W, DEF.settings.levelWidth || W);             // level = full scrollable world
       const LH = Math.max(H, DEF.settings.levelHeight || H);
-      canvas.width = W; canvas.height = H;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+      ctx.scale(dpr, dpr);
       const GRAV = DEF.settings.gravity == null ? 800 : DEF.settings.gravity;
       const BG = DEF.settings.background || '#bfe3ff';
       const AEXT = ['mp3', 'wav', 'ogg', 'm4a'];
@@ -304,36 +294,38 @@
       function* runBlock(b, self) {
         const a = b.args || {};
         switch (b.op) {
-          case 'move_by': self.x += +a.dx || 0; self.y += +a.dy || 0; break;
-          case 'change_x': self.x += +a.n || 0; break;
-          case 'change_y': self.y += +a.n || 0; break;
-          case 'set_velocity': self.vx = +a.vx || 0; self.vy = +a.vy || 0; break;
-          case 'jump': if (self.onGround) { self.vy = -(+a.power || 0); self.onGround = false; } break;
-          case 'follow': { const t = findOne(a.target); if (t) { const dx = (t.x + t.w / 2) - (self.x + self.w / 2), dy = (t.y + t.h / 2) - (self.y + self.h / 2); const d = Math.hypot(dx, dy) || 1; const sp = (+a.speed || 0) * RT.dt; self.x += dx / d * sp; self.y += dy / d * sp; } break; }
-          case 'wait': { let t = +a.secs || 0; while (t > 0) { t -= RT.dt; yield; } break; }
+          case 'move_by': self.x += +resolveArg(a.dx) || 0; self.y += +resolveArg(a.dy) || 0; break;
+          case 'change_x': self.x += +resolveArg(a.n) || 0; break;
+          case 'change_y': self.y += +resolveArg(a.n) || 0; break;
+          case 'set_velocity': self.vx = +resolveArg(a.vx) || 0; self.vy = +resolveArg(a.vy) || 0; break;
+          case 'jump': if (self.onGround) { self.vy = -(+resolveArg(a.power) || 0); self.onGround = false; } break;
+          case 'follow': { const t = findOne(a.target); if (t) { const dx = (t.x + t.w / 2) - (self.x + self.w / 2), dy = (t.y + t.h / 2) - (self.y + self.h / 2); const d = Math.hypot(dx, dy) || 1; const sp = (+resolveArg(a.speed) || 0) * RT.dt; self.x += dx / d * sp; self.y += dy / d * sp; } break; }
+          case 'wait': { let t = +resolveArg(a.secs) || 0; while (t > 0) { t -= RT.dt; yield; } break; }
           case 'forever': while (true) { yield* runStack(b.children || [], self); yield; if (RT.ended || self.dead) return; }
-          case 'repeat': { const n = Math.max(0, Math.floor(+a.count || 0)); for (let i = 0; i < n; i++) { yield* runStack(b.children || [], self); yield; if (RT.ended || self.dead) return; } break; }
+          case 'repeat': { const n = Math.max(0, Math.floor(+resolveArg(a.count) || 0)); for (let i = 0; i < n; i++) { yield* runStack(b.children || [], self); yield; if (RT.ended || self.dead) return; } break; }
           case 'if': if (evalCond(a.cond, self)) yield* runStack(b.children || [], self); break;
           case 'if_else': if (evalCond(a.cond, self)) yield* runStack(b.children || [], self); else yield* runStack(b.children2 || [], self); break;
           case 'show': self.visible = true; break;
           case 'hide': self.visible = false; break;
           case 'switch_sprite': self.sprite = a.sprite || null; break;
-          case 'set_text': self.text = subVars(a.value, self); break;
+          case 'set_text': self.text = subVars(resolveStr(a.value), self); break;
           case 'play_sound': playBuf(a.sound, false); break;
           case 'play_music': playBuf(a.music, true); break;
           case 'stop_sounds': stopAll(); break;
-          case 'set_volume': if (master) master.gain.value = Math.max(0, Math.min(1, (+a.value || 0) / 100)); break;
+          case 'set_volume': if (master) master.gain.value = Math.max(0, Math.min(1, (+resolveArg(a.value) || 0) / 100)); break;
           case 'set_var': RT.vars[a.name] = numOr(a.value); break;
-          case 'change_var': RT.vars[a.name] = (+RT.vars[a.name] || 0) + (+a.delta || 0); break;
-          case 'spawn': doSpawn(a.template, +a.x || 0, +a.y || 0); break;
+          case 'change_var': RT.vars[a.name] = (+RT.vars[a.name] || 0) + (+resolveArg(a.delta) || 0); break;
+          case 'spawn': doSpawn(a.template, +resolveArg(a.x) || 0, +resolveArg(a.y) || 0); break;
           case 'destroy': if (a.target === 'self') self.dead = true; else RT.objs.forEach((o) => { if (o.name === a.target) o.dead = true; }); break;
           case 'go_to_scene': { const i = DEF.scenes.findIndex((s) => s.name === a.sceneName); if (i >= 0) RT.next = i; break; }
-          case 'win': endGame(a.message || 'You win!', true); break;
-          case 'lose': endGame(a.message || 'Game over', false); break;
+          case 'win': endGame(resolveStr(a.message) || 'You win!', true); break;
+          case 'lose': endGame(resolveStr(a.message) || 'Game over', false); break;
           default: break;
         }
       }
-      function numOr(v) { const n = parseFloat(v); return isNaN(n) ? v : n; }
+      function resolveArg(v) { return (v && typeof v === 'object' && '__var__' in v) ? (RT.vars[v.__var__] == null ? 0 : RT.vars[v.__var__]) : v; }
+      function resolveStr(v) { const r = resolveArg(v); return r == null ? '' : String(r); }
+      function numOr(v) { const n = parseFloat(resolveStr(v)); return isNaN(n) ? resolveStr(v) : n; }
       function subVars(v, self) {
         let s = String(v == null ? '' : v);
         s = s.replace(/\$(\w+)/g, (m, k) => (k in RT.vars ? RT.vars[k] : m));
@@ -428,7 +420,7 @@
         ctx.restore();
       }
       function render() {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
         const cam = camOffset();
         ctx.save(); ctx.translate(-cam.x, -cam.y);
@@ -441,7 +433,7 @@
       // ---- overlays ----
       function overlay(text, sub, onClick) {
         cancelAnimationFrame(raf);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         if (!RT) { ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H); }
         ctx.fillStyle = 'rgba(15,23,42,.55)'; ctx.fillRect(0, 0, W, H);
         ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
@@ -460,8 +452,8 @@
       // Canvas is object-fit:contain inside its box, so map through the letterbox.
       function ptr(e) {
         const r = canvas.getBoundingClientRect();
-        const scale = Math.min(r.width / canvas.width, r.height / canvas.height) || 1;
-        const dw = canvas.width * scale, dh = canvas.height * scale;
+        const scale = Math.min(r.width / W, r.height / H) || 1;
+        const dw = W * scale, dh = H * scale;
         const offX = r.left + (r.width - dw) / 2, offY = r.top + (r.height - dh) / 2;
         const cam = RT ? camOffset() : { x: 0, y: 0 };
         return { x: (e.clientX - offX) / scale + cam.x, y: (e.clientY - offY) / scale + cam.y };
@@ -495,7 +487,7 @@
   function frameCss(bg) {
     return 'html,body{margin:0;height:100%;background:' + bg + ';overflow:hidden}'
       + '#wrap{position:fixed;inset:0}'
-      + 'canvas{display:block;width:100%;height:100%;object-fit:contain;background:' + bg + ';touch-action:none}';
+      + 'canvas{display:block;width:100%;height:100%;object-fit:contain;background:' + bg + ';touch-action:none;image-rendering:pixelated;image-rendering:crisp-edges}';
   }
   function indexHtml(t) {
     const bg = def.settings.background || '#bfe3ff';
@@ -886,16 +878,39 @@
 
   function renderFieldEl(b, f) {
     const a = b.args;
-    if (f.t === 'num') { const i = el('input'); i.type = 'number'; i.value = a[f.k]; i.addEventListener('input', () => { a[f.k] = Number(i.value); markDirty(); }); return i; }
-    if (f.t === 'text') { const i = el('input'); i.type = 'text'; i.value = a[f.k] == null ? '' : a[f.k]; i.size = 8; i.addEventListener('input', () => { a[f.k] = i.value; markDirty(); }); return i; }
     if (f.t === 'cond') return renderCond(b, f.k);
-    // select
-    const opts = selectSource(f.src);
-    const s = makeSelect(opts, a[f.k], (v) => {
-      if (v === '__new__') { const nm = (prompt('New variable name') || '').trim().replace(/[^A-Za-z0-9_]/g, ''); if (nm) { if (!def.variables.includes(nm)) def.variables.push(nm); a[f.k] = nm; } renderScript(); return; }
-      a[f.k] = v;
+    // select (no variable binding for selects)
+    if (f.t === 'select') {
+      const opts = selectSource(f.src);
+      const s = makeSelect(opts, a[f.k], (v) => {
+        if (v === '__new__') { const nm = (prompt('New variable name') || '').trim().replace(/[^A-Za-z0-9_]/g, ''); if (nm) { if (!def.variables.includes(nm)) def.variables.push(nm); a[f.k] = nm; } renderScript(); return; }
+        a[f.k] = v;
+      });
+      return s;
+    }
+    // num and text: support variable binding via $ toggle
+    const isVar = a[f.k] != null && typeof a[f.k] === 'object' && '__var__' in a[f.k];
+    const wrap = el('span'); wrap.style.cssText = 'display:inline-flex;gap:2px;align-items:center;';
+    const toggle = el('button', 'var-toggle' + (isVar ? ' active' : ''), '$');
+    toggle.title = isVar ? 'Switch to literal value' : 'Bind to a variable';
+    toggle.addEventListener('click', () => {
+      a[f.k] = isVar ? f.def : { __var__: (def.variables[0] || '') };
+      renderScript(); markDirty();
     });
-    return s;
+    let inp;
+    if (isVar) {
+      inp = el('input'); inp.type = 'text'; inp.value = a[f.k].__var__; inp.placeholder = 'var'; inp.size = 7;
+      inp.style.fontFamily = 'ui-monospace,monospace'; inp.style.color = '#fbbf24';
+      inp.addEventListener('input', () => { a[f.k] = { __var__: inp.value }; markDirty(); });
+    } else if (f.t === 'num') {
+      inp = el('input'); inp.type = 'number'; inp.value = a[f.k];
+      inp.addEventListener('input', () => { a[f.k] = Number(inp.value); markDirty(); });
+    } else {
+      inp = el('input'); inp.type = 'text'; inp.value = a[f.k] == null ? '' : a[f.k]; inp.size = 8;
+      inp.addEventListener('input', () => { a[f.k] = inp.value; markDirty(); });
+    }
+    wrap.appendChild(toggle); wrap.appendChild(inp);
+    return wrap;
   }
 
   function renderCond(b, k) {

@@ -267,6 +267,30 @@ CREATE TABLE IF NOT EXISTS catocode_users (
     password      TEXT NOT NULL,
     created_at    DOUBLE PRECISION NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS hackathons (
+    id            TEXT PRIMARY KEY,
+    title         TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    type          TEXT NOT NULL DEFAULT 'html',
+    host_id       TEXT NOT NULL,
+    starts_at     DOUBLE PRECISION NOT NULL,
+    ends_at       DOUBLE PRECISION NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hackathon_participants (
+    hackathon_id  TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    PRIMARY KEY (hackathon_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS hackathon_submissions (
+    hackathon_id  TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    project_id    TEXT NOT NULL,
+    submitted_at  DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (hackathon_id, user_id)
+);
 """
 
 _PROJECT_COLS = (
@@ -942,6 +966,17 @@ def api_delete(pid):
     return jsonify({"ok": True})
 
 
+@app.route("/api/projects/mine", methods=["GET"])
+def api_projects_mine():
+    """Return the logged-in user's projects (published + drafts) as cards."""
+    user = current_user()
+    if not user:
+        return jsonify({"error": "Not signed in.", "login": True}), 401
+    mine = [p for p in db_get_all() if p.get("owner") == user]
+    mine.sort(key=lambda p: -(p.get("updated_at") or p.get("created_at", 0)))
+    return jsonify([project_card(p) for p in mine])
+
+
 @app.route("/api/projects/<pid>/remix", methods=["POST"])
 def api_remix(pid):
     user = current_user()
@@ -1022,6 +1057,291 @@ def project_asset(pid, filename: str = "index.html"):
         return Response(body, mimetype=ASSET_MIME.get(ext) or m.group(1))
 
     abort(404)
+
+
+# --------------------------------------------------------------------------- #
+# Hackathon storage — JSON fallback (no DATABASE_URL) + PostgreSQL
+# --------------------------------------------------------------------------- #
+HACKATHONS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "hackathons.json"
+)
+hackathons_lock = Lock()
+
+_HACK_EMPTY: dict[str, Any] = {"hackathons": {}, "participants": {}, "submissions": {}}
+
+
+def _hack_load() -> dict[str, Any]:
+    if not os.path.exists(HACKATHONS_PATH):
+        return {k: dict(v) for k, v in _HACK_EMPTY.items()}
+    try:
+        with open(HACKATHONS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {k: dict(v) for k, v in _HACK_EMPTY.items()}
+
+
+def _hack_save(data: dict[str, Any]) -> None:
+    tmp = HACKATHONS_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp, HACKATHONS_PATH)
+
+
+def hackathon_get_all() -> list[dict[str, Any]]:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, title, description, type, host_id, starts_at, ends_at "
+                "FROM hackathons ORDER BY starts_at DESC"
+            )
+            rows = cur.fetchall()
+        return [
+            {"id": r[0], "title": r[1], "description": r[2] or "",
+             "type": r[3], "host_id": r[4], "starts_at": r[5], "ends_at": r[6]}
+            for r in rows
+        ]
+    data = _hack_load()
+    return sorted(data["hackathons"].values(), key=lambda h: -h["starts_at"])
+
+
+def hackathon_get_one(hid: str) -> dict[str, Any] | None:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, title, description, type, host_id, starts_at, ends_at "
+                "FROM hackathons WHERE id=%s", (hid,)
+            )
+            r = cur.fetchone()
+        if not r:
+            return None
+        return {"id": r[0], "title": r[1], "description": r[2] or "",
+                "type": r[3], "host_id": r[4], "starts_at": r[5], "ends_at": r[6]}
+    return _hack_load()["hackathons"].get(hid)
+
+
+def hackathon_insert(h: dict[str, Any]) -> None:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO hackathons (id, title, description, type, host_id, starts_at, ends_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (h["id"], h["title"], h["description"], h["type"],
+                 h["host_id"], h["starts_at"], h["ends_at"])
+            )
+        conn.commit()
+        return
+    with hackathons_lock:
+        data = _hack_load()
+        data["hackathons"][h["id"]] = h
+        _hack_save(data)
+
+
+def hackathon_participants(hid: str) -> list[str]:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM hackathon_participants WHERE hackathon_id=%s", (hid,))
+            return [r[0] for r in cur.fetchall()]
+    return _hack_load()["participants"].get(hid, [])
+
+
+def hackathon_join(hid: str, user: str) -> None:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO hackathon_participants (hackathon_id, user_id) "
+                "VALUES (%s, %s) ON CONFLICT DO NOTHING", (hid, user)
+            )
+        conn.commit()
+        return
+    with hackathons_lock:
+        data = _hack_load()
+        data["participants"].setdefault(hid, [])
+        if user not in data["participants"][hid]:
+            data["participants"][hid].append(user)
+        _hack_save(data)
+
+
+def hackathon_submissions(hid: str) -> list[dict[str, Any]]:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT user_id, project_id, submitted_at FROM hackathon_submissions "
+                "WHERE hackathon_id=%s ORDER BY submitted_at", (hid,)
+            )
+            return [{"user_id": r[0], "project_id": r[1], "submitted_at": r[2]}
+                    for r in cur.fetchall()]
+    subs = _hack_load()["submissions"].get(hid, {})
+    return sorted(subs.values(), key=lambda s: s["submitted_at"])
+
+
+def hackathon_submit(hid: str, user: str, project_id: str, now: float) -> None:
+    if DATABASE_URL:
+        conn = _pg_connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO hackathon_submissions (hackathon_id, user_id, project_id, submitted_at) "
+                "VALUES (%s, %s, %s, %s) ON CONFLICT (hackathon_id, user_id) "
+                "DO UPDATE SET project_id=EXCLUDED.project_id, submitted_at=EXCLUDED.submitted_at",
+                (hid, user, project_id, now)
+            )
+        conn.commit()
+        return
+    with hackathons_lock:
+        data = _hack_load()
+        data["submissions"].setdefault(hid, {})
+        data["submissions"][hid][user] = {"user_id": user, "project_id": project_id, "submitted_at": now}
+        _hack_save(data)
+
+
+def hackathon_is_participant(hid: str, user: str) -> bool:
+    return user in hackathon_participants(hid)
+
+
+def hackathon_submission_for(hid: str, user: str) -> dict[str, Any] | None:
+    for s in hackathon_submissions(hid):
+        if s["user_id"] == user:
+            return s
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Hackathon routes
+# --------------------------------------------------------------------------- #
+@app.route("/hackathons")
+def hackathons_page():
+    return render_template("hackathons.html", active="hackathons")
+
+
+@app.route("/hackathons/<hid>")
+def hackathon_detail_page(hid):
+    h = hackathon_get_one(hid)
+    if not h:
+        abort(404)
+    return render_template("hackathon_detail.html", hid=hid, active="hackathons")
+
+
+@app.route("/api/hackathons", methods=["GET"])
+def api_hackathons_list():
+    now = time.time()
+    all_h = hackathon_get_all()
+    result = []
+    for h in all_h:
+        parts = hackathon_participants(h["id"])
+        user = current_user()
+        is_joined = user in parts if user else False
+        sub = hackathon_submission_for(h["id"], user) if user else None
+        host_user = db_user_get(h["host_id"])
+        result.append({
+            **h,
+            "participant_count": len(parts),
+            "ended": now >= h["ends_at"],
+            "time_remaining": max(0, int(h["ends_at"] - now)),
+            "is_joined": is_joined,
+            "submitted_project": sub["project_id"] if sub else None,
+            "host_display": (host_user["display_name"] if host_user else h["host_id"]),
+        })
+    return jsonify(result)
+
+
+@app.route("/api/hackathons", methods=["POST"])
+def api_hackathons_create():
+    user = current_user()
+    if not user:
+        return jsonify({"error": "Sign in to host a hackathon.", "login": True}), 401
+    payload = request.get_json(silent=True) or {}
+    title = (payload.get("title") or "").strip()[:80]
+    description = (payload.get("description") or "").strip()[:500]
+    htype = payload.get("type") if payload.get("type") in ("html", "game") else "html"
+    duration = int(payload.get("duration") or 60)
+    duration = max(5, min(10080, duration))
+    if not title:
+        return jsonify({"error": "Title is required."}), 400
+    now = time.time()
+    hid = "".join(random.choices(PROJECT_ID_ALPHABET, k=8))
+    h = {"id": hid, "title": title, "description": description, "type": htype,
+         "host_id": user, "starts_at": now, "ends_at": now + duration * 60}
+    hackathon_insert(h)
+    hackathon_join(hid, user)
+    return jsonify({"id": hid})
+
+
+@app.route("/api/hackathons/<hid>", methods=["GET"])
+def api_hackathon_get(hid):
+    h = hackathon_get_one(hid)
+    if not h:
+        return jsonify({"error": "Not found"}), 404
+    now = time.time()
+    ended = now >= h["ends_at"]
+    parts = hackathon_participants(hid)
+    subs_raw = hackathon_submissions(hid)
+    user = current_user()
+    host_user = db_user_get(h["host_id"])
+    subs_out = []
+    if ended:
+        for s in subs_raw:
+            p = db_get_one(s["project_id"])
+            subs_out.append({
+                "user_id": s["user_id"],
+                "project_id": s["project_id"],
+                "submitted_at": s["submitted_at"],
+                "project_title": p["title"] if p else "Unknown",
+                "project_url": f"/p/{s['project_id']}" if p else None,
+            })
+    return jsonify({
+        **h,
+        "participant_count": len(parts),
+        "time_remaining": max(0, int(h["ends_at"] - now)),
+        "ended": ended,
+        "is_joined": (user in parts) if user else False,
+        "submitted_project": hackathon_submission_for(hid, user)["project_id"] if (user and hackathon_submission_for(hid, user)) else None,
+        "submissions": subs_out,
+        "submission_count": len(subs_raw),
+        "host_display": (host_user["display_name"] if host_user else h["host_id"]),
+    })
+
+
+@app.route("/api/hackathons/<hid>/join", methods=["POST"])
+def api_hackathon_join(hid):
+    user = current_user()
+    if not user:
+        return jsonify({"error": "Sign in to join.", "login": True}), 401
+    h = hackathon_get_one(hid)
+    if not h:
+        return jsonify({"error": "Not found"}), 404
+    if time.time() >= h["ends_at"]:
+        return jsonify({"error": "Hackathon has ended."}), 400
+    hackathon_join(hid, user)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/hackathons/<hid>/submit", methods=["POST"])
+def api_hackathon_submit(hid):
+    user = current_user()
+    if not user:
+        return jsonify({"error": "Sign in to submit.", "login": True}), 401
+    h = hackathon_get_one(hid)
+    if not h:
+        return jsonify({"error": "Not found"}), 404
+    now = time.time()
+    if now >= h["ends_at"]:
+        return jsonify({"error": "Hackathon has ended."}), 400
+    payload = request.get_json(silent=True) or {}
+    project_id = payload.get("project_id")
+    if not project_id:
+        return jsonify({"error": "project_id is required."}), 400
+    project = db_get_one(project_id)
+    if not project or project.get("owner") != user or not project.get("published", True):
+        return jsonify({"error": "Invalid or unpublished project."}), 400
+    if project.get("type", "html") != h["type"]:
+        return jsonify({"error": f"Only {h['type']} projects can be submitted here."}), 400
+    hackathon_submit(hid, user, project_id, now)
+    return jsonify({"ok": True})
 
 
 # --------------------------------------------------------------------------- #
