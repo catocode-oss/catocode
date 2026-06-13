@@ -4,30 +4,111 @@
 
 {% block head %}
 <style>
-  .hero {
-    padding: 80px 0 60px;
-    text-align: center;
+  .hero { padding: 64px 0 24px; }
+  .hero-grid {
+    display: grid; grid-template-columns: 1.05fr 0.95fr;
+    gap: 40px; align-items: center;
+  }
+  .hero-copy { text-align: left; }
+  .eyebrow {
+    display: inline-block; margin-bottom: 16px;
+    font-size: 12.5px; font-weight: 800; letter-spacing: .02em;
+    color: var(--primary-2);
+    background: rgba(14,165,233,.12); border: 1px solid rgba(14,165,233,.2);
+    padding: 6px 13px; border-radius: 999px;
   }
   .hero h1 {
-    font-size: clamp(40px, 7vw, 76px);
-    line-height: 1.05;
+    font-size: clamp(40px, 6vw, 68px);
+    line-height: 1.04;
     letter-spacing: -0.03em;
     margin: 0 0 18px;
     font-weight: 800;
-    background: linear-gradient(135deg, #0F172A 0%, #0EA5E9 60%, #6366F1 100%);
+    background: linear-gradient(135deg, #0F172A 0%, #0EA5E9 55%, #6366F1 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
   .hero p {
-    font-size: clamp(16px, 1.6vw, 19px);
+    font-size: clamp(16px, 1.5vw, 18.5px);
     color: var(--ink-2);
-    max-width: 640px;
-    margin: 0 auto 30px;
+    max-width: 520px;
+    margin: 0 0 28px;
     line-height: 1.55;
   }
-  .hero .cta { display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .hero .cta { display: inline-flex; gap: 12px; flex-wrap: wrap; }
   .hero .btn { padding: 13px 22px; font-size: 15.5px; }
+  .feature-strip {
+    display: flex; flex-wrap: wrap; gap: 10px 14px;
+    margin-top: 24px; color: var(--muted); font-size: 13px; font-weight: 600;
+  }
+  .feature-strip span {
+    background: rgba(255,255,255,.6); border: 1px solid var(--line);
+    padding: 6px 12px; border-radius: 999px;
+  }
+
+  /* floating mock editor window */
+  .hero-mock {
+    border-radius: 18px; overflow: hidden;
+    background: #0F172A;
+    border: 1px solid rgba(15,23,42,.12);
+    box-shadow: 0 30px 70px rgba(15, 23, 42, .22), 0 8px 20px rgba(15,23,42,.12);
+    transform: rotate(1.4deg);
+    transition: transform .3s ease;
+  }
+  .hero-mock:hover { transform: rotate(0deg) translateY(-4px); }
+  .mock-bar {
+    display: flex; align-items: center; gap: 7px;
+    padding: 10px 14px; background: #1E293B;
+  }
+  .mock-bar .d { width: 11px; height: 11px; border-radius: 999px; }
+  .mock-bar .d.r { background: #F87171; } .mock-bar .d.y { background: #FBBF24; } .mock-bar .d.g { background: #34D399; }
+  .mock-tab {
+    margin-left: 8px; font-family: ui-monospace, monospace; font-size: 12px;
+    color: #94A3B8; background: #0F172A; padding: 3px 10px; border-radius: 6px;
+  }
+  .mock-body { display: grid; grid-template-columns: 1fr 0.8fr; }
+  .mock-code {
+    margin: 0; padding: 16px 16px; font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 12px; line-height: 1.8; color: #E2E8F0; overflow: hidden;
+  }
+  .mock-code .ln { display: block; white-space: pre; }
+  .t-k { color: #7DD3FC; } .t-a { color: #C4B5FD; } .t-s { color: #86EFAC; } .t-e { font-style: normal; }
+  .mock-preview {
+    background: linear-gradient(180deg, #BAE6FD, #E0F2FE);
+    border-left: 1px solid rgba(255,255,255,.15);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 18px; text-align: center;
+  }
+  .mp-title { font-weight: 800; color: #0F172A; font-size: 15px; letter-spacing: -.01em; }
+  .mp-btn {
+    border: none; border-radius: 9px; padding: 8px 16px; font-weight: 700; font-size: 13px;
+    color: #fff; background: #0EA5E9; box-shadow: 0 6px 14px rgba(14,165,233,.35); cursor: default;
+  }
+
+  /* how-it-works */
+  .how {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    padding: 18px 24px 10px;
+  }
+  .how-card {
+    background: var(--card); border: 1px solid rgba(15,23,42,.06);
+    border-radius: 16px; padding: 18px;
+    display: flex; flex-direction: column; gap: 4px;
+    box-shadow: 0 6px 18px rgba(15,23,42,.05);
+  }
+  .how-card .how-n {
+    width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #38BDF8, #6366F1); color: #fff; font-weight: 800;
+    margin-bottom: 8px;
+  }
+  .how-card b { font-size: 16px; }
+  .how-card span:last-child { color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-mock { transform: none; }
+    .how { grid-template-columns: 1fr; }
+  }
 
   .section { padding: 36px 0 28px; }
   .section-head {
@@ -76,18 +157,64 @@
     color: var(--muted);
   }
   .empty h3 { color: var(--ink); margin: 0 0 8px; }
+
+  .type-filter { display: flex; gap: 6px; margin: -6px 0 18px; }
+  .type-filter .pill {
+    padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 13px;
+    background: rgba(255, 255, 255, .7); border: 1px solid var(--line); cursor: pointer;
+    font-family: inherit; color: var(--ink-2); transition: background .15s;
+  }
+  .type-filter .pill.active { background: var(--ink); color: #fff; border-color: var(--ink); }
 </style>
 {% endblock %}
 
 {% block content %}
 <section class="hero container">
-  <h1>Code in the clouds.</h1>
-  <p>CatoCode is a tiny anonymous playground for HTML, CSS, and JavaScript.
-     Build something, publish it, and let the world star it.</p>
-  <div class="cta">
-    <a href="/new" class="btn btn-sky">+ Start a Project</a>
-    <a href="/explore" class="btn btn-ghost">Explore Projects</a>
+  <div class="hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow">☁ Build · Publish · Remix</span>
+      <h1>Code in the clouds.</h1>
+      <p>CatoCode is a tiny playground for HTML, CSS, and JavaScript.
+         Build something, publish it from your library, and let the world remix and star it.</p>
+      <div class="cta">
+        <a href="/new" class="btn btn-sky">+ Start a Project</a>
+        {% if current_user %}
+          <a href="/account" class="btn btn-ghost">Your Library</a>
+        {% else %}
+          <a href="/explore" class="btn btn-ghost">Explore Projects</a>
+        {% endif %}
+      </div>
+      <div class="feature-strip">
+        <span>⚡ Live preview</span>
+        <span>⑂ Remix anything</span>
+        <span>★ Star the best</span>
+      </div>
+    </div>
+
+    <div class="hero-mock" aria-hidden="true">
+      <div class="mock-bar">
+        <span class="d r"></span><span class="d y"></span><span class="d g"></span>
+        <span class="mock-tab">index.html</span>
+      </div>
+      <div class="mock-body">
+        <pre class="mock-code"><span class="ln"><span class="t-k">&lt;h1&gt;</span>Hello, CatoCode! <span class="t-e">☁️</span><span class="t-k">&lt;/h1&gt;</span></span>
+<span class="ln"><span class="t-k">&lt;button</span> <span class="t-a">id</span>=<span class="t-s">"go"</span><span class="t-k">&gt;</span>Click me<span class="t-k">&lt;/button&gt;</span></span>
+<span class="ln"><span class="t-k">&lt;script&gt;</span></span>
+<span class="ln">  go.<span class="t-a">onclick</span> = () =&gt; confetti();</span>
+<span class="ln"><span class="t-k">&lt;/script&gt;</span></span></pre>
+        <div class="mock-preview">
+          <div class="mp-title">Hello, CatoCode! ☁️</div>
+          <button class="mp-btn">Click me</button>
+        </div>
+      </div>
+    </div>
   </div>
+</section>
+
+<section class="how container">
+  <div class="how-card"><span class="how-n">1</span><b>Build</b><span>Edit HTML, CSS &amp; JS with a live preview.</span></div>
+  <div class="how-card"><span class="how-n">2</span><b>Publish</b><span>Save to your library and share a link.</span></div>
+  <div class="how-card"><span class="how-n">3</span><b>Remix</b><span>Fork anyone's project and make it yours.</span></div>
 </section>
 
 <section class="section container">
@@ -97,14 +224,19 @@
   </div>
 
   {% if projects %}
+    <div class="type-filter" id="typeFilter">
+      <button class="pill active" data-type="all">All</button>
+      <button class="pill" data-type="game">Games</button>
+      <button class="pill" data-type="html">HTML</button>
+    </div>
     <div class="grid">
       {% for p in projects %}
         {% set rank = loop.index %}
-        <a href="/p/{{ p.id }}" class="card proj-card">
+        <a href="/p/{{ p.id }}" class="card proj-card" data-type="{{ p.type }}">
           <div class="proj-rank {% if rank == 1 %}gold{% elif rank == 2 %}silver{% elif rank == 3 %}bronze{% endif %}">
             #{{ rank }}
           </div>
-          <h3 class="proj-title">{{ p.title }}</h3>
+          <h3 class="proj-title">{{ p.title }}{% if p.type == 'game' %} <span class="badge">GAME</span>{% endif %}</h3>
           <p class="proj-desc">{{ p.description or 'No description.' }}</p>
           <div class="proj-meta">
             <span class="proj-author">by {{ p.author }}</span>
@@ -125,4 +257,22 @@
     </div>
   {% endif %}
 </section>
+
+<script>
+  (function () {
+    const filter = document.getElementById('typeFilter');
+    const grid = document.querySelector('.section .grid');
+    if (!filter || !grid) return;
+    const cards = Array.from(grid.querySelectorAll('.proj-card'));
+    const pills = filter.querySelectorAll('.pill');
+    pills.forEach(p => p.addEventListener('click', () => {
+      pills.forEach(x => x.classList.remove('active'));
+      p.classList.add('active');
+      const t = p.dataset.type;
+      cards.forEach(c => {
+        c.style.display = (t === 'all' || c.dataset.type === t) ? '' : 'none';
+      });
+    }));
+  })();
+</script>
 {% endblock %}

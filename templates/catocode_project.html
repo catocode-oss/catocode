@@ -100,11 +100,33 @@
   }
   .info-row .chip b { color: var(--ink); }
 
-  .locked-note {
-    margin-top: 14px;
-    background: rgba(254, 243, 199, .8); border: 1px solid #FCD34D;
-    color: #92400E; padding: 10px 14px; border-radius: 12px;
-    font-size: 13.5px; display: flex; gap: 8px; align-items: center;
+  .action-row {
+    margin-top: 18px;
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  }
+  .action-row .grow { flex: 1; }
+  .btn-danger { background: #fff; color: #DC2626; border-color: #FECACA; }
+  .btn-danger:hover { background: #FEF2F2; }
+
+  .code-panel {
+    margin-top: 16px; border-radius: 16px; overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, .1); background: #0F172A;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .12);
+  }
+  .code-tabs {
+    display: flex; gap: 2px; padding: 8px 10px 0; background: #1E293B;
+    overflow-x: auto;
+  }
+  .code-tabs button {
+    background: transparent; border: none; color: #94A3B8; cursor: pointer;
+    font-family: ui-monospace, monospace; font-size: 12.5px; font-weight: 600;
+    padding: 8px 12px; border-radius: 8px 8px 0 0; white-space: nowrap;
+  }
+  .code-tabs button.active { background: #0F172A; color: #fff; }
+  .code-view {
+    margin: 0; padding: 16px 18px; overflow: auto; max-height: 60vh;
+    color: #E2E8F0; font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 12.5px; line-height: 1.55; white-space: pre;
   }
 </style>
 {% endblock %}
@@ -143,7 +165,7 @@
   <div class="frame-wrap">
     <div class="frame-bar">
       <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-      <span class="url">catocode.app/p/{{ project.id }}</span>
+      <span class="url">{{ project.title }}</span>
       <span class="grow"></span>
       <a href="/r/{{ project.id }}/" target="_blank" rel="noopener">Open in new tab ↗</a>
     </div>
@@ -151,18 +173,109 @@
             src="/r/{{ project.id }}/index.html"></iframe>
   </div>
 
-  <div class="info-row">
+  <div class="action-row">
+    <button id="remixBtn" class="btn btn-sky">⑂ Remix</button>
+    <button id="codeBtn" class="btn btn-ghost">&lt;/&gt; View code</button>
+    {% if is_owner %}
+      <a href="/edit/{{ project.id }}" class="btn btn-primary">Edit</a>
+      <button id="deleteBtn" class="btn btn-danger">Delete</button>
+    {% endif %}
+    <span class="grow"></span>
     <span class="chip"><b>{{ files|length }}</b> file{{ '' if files|length == 1 else 's' }}</span>
     {% if images %}<span class="chip"><b>{{ images|length }}</b> image{{ '' if images|length == 1 else 's' }}</span>{% endif %}
-    <span class="chip">ID <b>{{ project.id }}</b></span>
   </div>
 
-  <div class="locked-note">
-    🔒 This project is published and immutable — it can be starred but not edited.
+  <!-- source viewer (open to everyone, no sign-in needed) -->
+  <div id="codePanel" class="code-panel" hidden>
+    <div class="code-tabs" id="codeTabs"></div>
+    <pre class="code-view"><code id="codeView"></code></pre>
   </div>
 </section>
 
 <script>
+  window.PROJECT = {
+    id: {{ project.id|tojson }},
+    files: {{ files|tojson }},
+    loggedIn: {{ 'true' if current_user else 'false' }},
+  };
+</script>
+
+<script>
+// ── source viewer (no sign-in needed) ──
+(function () {
+  const btn = document.getElementById('codeBtn');
+  const panel = document.getElementById('codePanel');
+  const tabs = document.getElementById('codeTabs');
+  const view = document.getElementById('codeView');
+  const cache = {};
+  let built = false, open = false;
+
+  async function load(name) {
+    if (cache[name] == null) {
+      try {
+        const res = await fetch('/r/' + window.PROJECT.id + '/' + encodeURIComponent(name));
+        cache[name] = await res.text();
+      } catch (e) { cache[name] = '// could not load ' + name; }
+    }
+    view.textContent = cache[name];
+    Array.from(tabs.children).forEach(b => b.classList.toggle('active', b.dataset.f === name));
+  }
+
+  function build() {
+    (window.PROJECT.files || []).forEach((name, i) => {
+      const b = document.createElement('button');
+      b.textContent = name; b.dataset.f = name;
+      b.addEventListener('click', () => load(name));
+      tabs.appendChild(b);
+    });
+    built = true;
+    if (window.PROJECT.files && window.PROJECT.files.length) load(window.PROJECT.files[0]);
+  }
+
+  btn.addEventListener('click', () => {
+    if (!built) build();
+    open = !open;
+    panel.hidden = !open;
+    btn.innerHTML = open ? '&lt;/&gt; Hide code' : '&lt;/&gt; View code';
+  });
+})();
+
+// ── remix ──
+(function () {
+  const btn = document.getElementById('remixBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Remixing…';
+    try {
+      const res = await fetch('/api/projects/' + window.PROJECT.id + '/remix', { method: 'POST' });
+      const data = await res.json();
+      if (res.status === 401 && data.login) {
+        const next = encodeURIComponent(location.pathname);
+        window.location.href = '/login?next=' + next; return;
+      }
+      if (!res.ok) throw new Error(data.error || 'Remix failed');
+      window.location.href = data.edit_url;
+    } catch (e) {
+      alert(e.message || 'Remix failed'); btn.disabled = false; btn.textContent = prev;
+    }
+  });
+})();
+
+// ── delete (owner only) ──
+(function () {
+  const btn = document.getElementById('deleteBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Delete this project permanently?')) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/projects/' + window.PROJECT.id, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      window.location.href = '/account';
+    } catch (e) { alert('Could not delete.'); btn.disabled = false; }
+  });
+})();
+
 (function () {
   const box = document.querySelector('.rating-box');
   const pid = box.dataset.pid;
@@ -186,7 +299,8 @@
       helpEl.textContent = `You rated ${myRating}/5`;
       clearBtn.hidden = false;
     } else {
-      helpEl.textContent = 'Click to rate';
+      helpEl.textContent = window.PROJECT && !window.PROJECT.loggedIn
+        ? 'Sign in to rate' : 'Click to rate';
       clearBtn.hidden = true;
     }
   }
@@ -214,6 +328,11 @@
         body: JSON.stringify({ prior, rating: newRating }),
       });
       const data = await res.json();
+      if (res.status === 401 && data.login) {
+        const next = encodeURIComponent(location.pathname);
+        window.location.href = '/login?next=' + next;
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Rate failed');
       myRating = newRating;
       if (newRating > 0) localStorage.setItem(key, String(newRating));

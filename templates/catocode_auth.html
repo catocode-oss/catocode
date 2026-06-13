@@ -1,0 +1,110 @@
+{% extends "catocode_base.html" %}
+{% block title %}{{ 'Sign up' if page == 'signup' else 'Log in' }} · CatoCode{% endblock %}
+
+{% block head %}
+<style>
+  .auth-wrap { max-width: 420px; margin: 0 auto; padding: 64px 0 40px; }
+  .auth-card { padding: 30px 28px 26px; }
+  .auth-card h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .auth-card .sub { color: var(--muted); font-size: 14.5px; margin: 0 0 22px; }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .field label { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+  .field input {
+    padding: 11px 13px; border-radius: 11px; border: 1px solid var(--line);
+    font-size: 15px; outline: none; font-family: inherit; background: #F8FAFC;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .field input:focus {
+    border-color: var(--primary); background: #fff;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, .18);
+  }
+  .auth-btn { width: 100%; justify-content: center; padding: 12px; font-size: 15px; margin-top: 4px; }
+  .auth-err {
+    background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C;
+    padding: 9px 12px; border-radius: 10px; font-size: 13.5px; margin-bottom: 14px;
+    display: none;
+  }
+  .auth-err.show { display: block; }
+  .auth-alt { text-align: center; margin-top: 18px; color: var(--muted); font-size: 14px; }
+  .auth-alt a { color: var(--primary-2); font-weight: 700; }
+  .auth-alt a:hover { text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="container auth-wrap">
+  <div class="card auth-card">
+    {% if page == 'signup' %}
+      <h1>Create your account</h1>
+      <p class="sub">Publish projects, build a library, and remix what you love.</p>
+    {% else %}
+      <h1>Welcome back</h1>
+      <p class="sub">Log in to your CatoCode library.</p>
+    {% endif %}
+
+    <div id="err" class="auth-err"></div>
+
+    <form id="authForm" method="post" action="{{ '/signup' if page == 'signup' else '/login' }}" autocomplete="on">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" maxlength="20"
+               placeholder="{{ 'pick a username' if page == 'signup' else 'your username' }}"
+               autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               placeholder="{{ 'at least 6 characters' if page == 'signup' else '••••••••' }}"
+               autocomplete="{{ 'new-password' if page == 'signup' else 'current-password' }}" />
+      </div>
+      <button type="submit" class="btn btn-sky auth-btn">
+        {{ 'Create account' if page == 'signup' else 'Log in' }}
+      </button>
+    </form>
+
+    {% if page == 'signup' %}
+      <p class="auth-alt">Already have an account? <a href="/login">Log in</a></p>
+    {% else %}
+      <p class="auth-alt">New to CatoCode? <a href="/signup">Sign up</a></p>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+(function () {
+  const form = document.getElementById('authForm');
+  const err = document.getElementById('err');
+  // Derive the endpoint from the page mode. NOTE: do not inject a quoted JS
+  // string literal via Jinja here — autoescaping turns the quotes into &#39;
+  // which is a SyntaxError that prevents this whole script (and the submit
+  // handler) from running, causing a native GET that leaks the password.
+  const page = "{{ page }}";
+  const endpoint = page === 'signup' ? '/api/signup' : '/api/login';
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.classList.remove('show');
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+      window.location.href = next || data.redirect || '/account';
+    } catch (e2) {
+      err.textContent = e2.message;
+      err.classList.add('show');
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

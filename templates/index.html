@@ -162,6 +162,9 @@
     .mode-btn.active[data-mode="easy"] {
       background: linear-gradient(135deg, #34D399, #059669); color:#fff;
       border-color: transparent; box-shadow: 0 6px 14px rgba(52,211,153,.35); }
+    .mode-btn.active[data-mode="medium"] {
+      background: linear-gradient(135deg, #FBBF24, #D97706); color:#fff;
+      border-color: transparent; box-shadow: 0 6px 14px rgba(251,191,36,.35); }
     .mode-btn.active[data-mode="hard"] {
       background: linear-gradient(135deg, #F97316, #DC2626); color:#fff;
       border-color: transparent; box-shadow: 0 6px 14px rgba(249,115,22,.35); }
@@ -375,6 +378,15 @@
       Ten broken functions. One impostor. Fix the build before they sink it.
     </p>
 
+    <div id="join-banner" class="hidden panel mt-8 p-4 text-left border-2"
+         style="border-color:#38BDF8;background:rgba(56,189,248,.08);">
+      <p class="text-sm font-semibold flex items-center gap-2">
+        <i data-lucide="link" class="ico-sm" style="color:#0284C7"></i>
+        You're invited to room <b id="join-banner-code" class="tracking-widest">----</b>
+      </p>
+      <p class="text-xs text-slate-500 mt-1">Just enter your name below and hit Join.</p>
+    </div>
+
     <div class="panel mt-10 p-6 text-left">
       <label class="text-xs uppercase tracking-wide text-slate-500">Display name</label>
       <input id="player-name" class="input w-full mt-1" maxlength="18"
@@ -410,9 +422,13 @@
         <div class="flex items-center gap-2 mt-1">
           <h2 id="lobby-code" class="text-5xl font-bold tracking-widest">----</h2>
           <button id="btn-copy" class="btn-secondary text-xs">
-            <i data-lucide="copy" class="ico-sm"></i> Copy
+            <i data-lucide="copy" class="ico-sm"></i> Copy code
+          </button>
+          <button id="btn-copy-link" class="btn-secondary text-xs">
+            <i data-lucide="link" class="ico-sm"></i> Copy invite link
           </button>
         </div>
+        <p class="text-xs text-slate-400 mt-2">Share the link — friends just enter a name and join.</p>
       </div>
       <button id="btn-leave" class="btn-secondary">
         <i data-lucide="arrow-left" class="ico-sm"></i> Leave
@@ -443,9 +459,12 @@
             <label class="text-sm flex items-center gap-1.5">
               <i data-lucide="zap" class="ico-sm"></i> Difficulty
             </label>
-            <div class="grid grid-cols-2 gap-2 mt-2">
+            <div class="grid grid-cols-3 gap-2 mt-2">
               <button id="mode-easy" class="mode-btn btn-secondary justify-center" data-mode="easy">
                 <i data-lucide="leaf" class="ico-sm"></i> Easy
+              </button>
+              <button id="mode-medium" class="mode-btn btn-secondary justify-center" data-mode="medium">
+                <i data-lucide="gauge" class="ico-sm"></i> Medium
               </button>
               <button id="mode-hard" class="mode-btn btn-secondary justify-center" data-mode="hard">
                 <i data-lucide="flame" class="ico-sm"></i> Hard
@@ -497,6 +516,7 @@
         <button id="btn-start" class="btn-fun w-full mt-6 justify-center">
           <i data-lucide="play" class="ico"></i> Start Game
         </button>
+        <p id="start-hint" class="text-xs text-center text-slate-500 mt-2 hidden">Need at least 3 players to start.</p>
       </div>
     </div>
   </div>
@@ -676,7 +696,6 @@
       <span class="font-semibold flex items-center gap-2 text-sm">
         <i data-lucide="message-circle" class="ico-sm"></i> Chat
       </span>
-      <button id="chat-tts" class="chat-icon-btn" aria-label="Toggle read-aloud" title="Read-aloud ON (click to mute)" style="font-size:15px;line-height:1;">🔊</button>
       <button id="chat-close" class="chat-icon-btn" aria-label="Close chat">
         <i data-lucide="x" class="ico-sm"></i>
       </button>
@@ -735,6 +754,9 @@ const ICON_DICT = {
   "message-circle": _SVG('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'),
   "send":         _SVG('<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>'),
   "x":            _SVG('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+  "gauge":        _SVG('<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>'),
+  "link":         _SVG('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+  "check":        _SVG('<path d="M20 6 9 17l-5-5"/>'),
 };
 
 function icons(root) {
@@ -866,49 +888,12 @@ const Chat = (() => {
     if (!text) return;
     socket.emit("chat_msg", { text });
   }
-  // ── text-to-speech ──
-  let ttsEnabled = true;
-  let ttsVoice = null;
-  const ttsBtn = el("chat-tts");
-
-  function ttsLoadVoice() {
-    const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-    ttsVoice = voices.find(v => v.lang.startsWith("en-") && !v.name.includes("Google")) // prefer local en
-            || voices.find(v => v.lang.startsWith("en"))
-            || voices[0]
-            || null;
-  }
-  if ("speechSynthesis" in window) {
-    ttsLoadVoice();
-    speechSynthesis.addEventListener("voiceschanged", ttsLoadVoice);
-  }
-
-  ttsBtn.addEventListener("click", () => {
-    ttsEnabled = !ttsEnabled;
-    ttsBtn.textContent = ttsEnabled ? "🔊" : "🔇";
-    ttsBtn.title = ttsEnabled ? "Read-aloud ON (click to mute)" : "Read-aloud OFF (click to enable)";
-    if (!ttsEnabled) speechSynthesis.cancel();
-  });
-
-  function ttsSpeak(msg) {
-    if (!ttsEnabled || msg.sid === SELF_SID) return;
-    if (!("speechSynthesis" in window)) return;
-    speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(msg.name + " says: " + msg.text);
-    utt.rate = 1.1;
-    utt.pitch = 1;
-    utt.volume = 1;
-    if (ttsVoice) utt.voice = ttsVoice;
-    speechSynthesis.speak(utt);
-  }
-
   function receive(msg, fromHistory) {
     renderMsg(msg);
     if (!fromHistory && !isOpen && msg.sid !== SELF_SID) {
       unread++; updateBadge();
       Sound.click();
     }
-    if (!fromHistory) ttsSpeak(msg);
     if (isOpen) scrollToBottom();
   }
   function loadHistory(messages) {
@@ -1025,13 +1010,45 @@ function showLandingError(msg) {
   setTimeout(() => el.classList.add("hidden"), 3500);
 }
 
+// Direct-join links: /codesabotage?join=CODE — prefill the code so the
+// invitee only has to type a name and hit Join.
+(function handleInviteLink() {
+  const params = new URLSearchParams(location.search);
+  const code = (params.get("join") || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+  if (code.length === 4) {
+    $("join-code").value = code;
+    const banner = $("join-banner");
+    if (banner) {
+      $("join-banner-code").textContent = code;
+      banner.classList.remove("hidden");
+    }
+    setTimeout(() => $("player-name").focus(), 50);
+  }
+})();
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lobby
 // ─────────────────────────────────────────────────────────────────────────────
-$("btn-copy").addEventListener("click", () => {
+function flashCopied(btn, label) {
+  const original = btn.innerHTML;
+  btn.innerHTML = '<i data-lucide="check" class="ico-sm"></i> ' + label;
+  icons(btn);
+  setTimeout(() => { btn.innerHTML = original; icons(btn); }, 1400);
+}
+function inviteLink() {
+  return location.origin + location.pathname + "?join=" + (ROOM.code || "");
+}
+$("btn-copy").addEventListener("click", (e) => {
   if (!ROOM.code) return;
   navigator.clipboard?.writeText(ROOM.code);
   Sound.click();
+  flashCopied(e.currentTarget, "Copied!");
+});
+$("btn-copy-link").addEventListener("click", (e) => {
+  if (!ROOM.code) return;
+  navigator.clipboard?.writeText(inviteLink());
+  Sound.click();
+  flashCopied(e.currentTarget, "Link copied!");
 });
 $("btn-leave").addEventListener("click", () => {
   Sound.click();
@@ -1040,7 +1057,7 @@ $("btn-leave").addEventListener("click", () => {
 });
 $("btn-start").addEventListener("click", () => { Sound.click(); socket.emit("start_game"); });
 
-for (const mode of ["easy", "hard"]) {
+for (const mode of ["easy", "medium", "hard"]) {
   $(`mode-${mode}`).addEventListener("click", () => {
     if (SELF_SID !== ROOM.host_sid) return;
     Sound.click();
@@ -1086,7 +1103,8 @@ function renderLobby(state) {
   $("game-room-code").textContent = state.code;
   $("lobby-count").textContent = `${state.players.length} / 10`;
   const isHost = SELF_SID === state.host_sid;
-  $("btn-start").disabled = !isHost || state.players.length < 2;
+  $("btn-start").disabled = !isHost || state.players.length < 3;
+  $("start-hint").classList.toggle("hidden", state.players.length >= 3);
   $("lobby-host-note").textContent = isHost
     ? "You are the host." : "Only the host can change settings.";
   const hasImpostor = state.settings.has_impostor !== false;
@@ -1101,14 +1119,16 @@ function renderLobby(state) {
   }
   // mode buttons
   const mode = state.settings.mode || "hard";
-  for (const m of ["easy", "hard"]) {
+  for (const m of ["easy", "medium", "hard"]) {
     const btn = $(`mode-${m}`);
     btn.classList.toggle("active", m === mode);
     btn.disabled = !isHost;
   }
-  $("mode-hint").textContent = mode === "easy"
-    ? "Beginner-friendly bugs."
-    : "Trickier JS quirks.";
+  $("mode-hint").textContent = {
+    easy:   "Beginner-friendly one-liner bugs.",
+    medium: "Array & string bugs — loops, filters, maps.",
+    hard:   "Trickier JS quirks: reduce, sort, regex, off-by-one.",
+  }[mode] || "Trickier JS quirks.";
 
   // team-mode buttons
   for (const t of ["coop", "social"]) {
@@ -1584,8 +1604,29 @@ socket.on("game_ended", info => {
     ? `Impostor was <b>${escapeHtml(info.impostor.name)}</b>.` : "";
   $("end-host").classList.add("show");
   icons();
-  if (won) Sound.win(); else Sound.lose();
+  if (won) { Sound.win(); confettiBurst(); } else Sound.lose();
 });
+
+// ── tiny dependency-free confetti for the win screen ──
+function confettiBurst() {
+  const colors = ["#38BDF8", "#6366F1", "#F59E0B", "#EF4444", "#10B981", "#A78BFA"];
+  const N = 120;
+  for (let i = 0; i < N; i++) {
+    const p = document.createElement("div");
+    const size = 6 + Math.random() * 8;
+    p.style.cssText = `position:fixed;z-index:9999;top:-20px;left:${Math.random()*100}vw;`
+      + `width:${size}px;height:${size*0.6}px;background:${colors[i%colors.length]};`
+      + `opacity:.95;border-radius:2px;pointer-events:none;`;
+    document.body.appendChild(p);
+    const dur = 2200 + Math.random() * 1800;
+    const drift = (Math.random() - 0.5) * 240;
+    p.animate([
+      { transform: `translate(0, 0) rotate(${Math.random()*360}deg)`, opacity: 1 },
+      { transform: `translate(${drift}px, 110vh) rotate(${Math.random()*720}deg)`, opacity: 0.9 }
+    ], { duration: dur, easing: "cubic-bezier(.2,.6,.4,1)" })
+     .onfinish = () => p.remove();
+  }
+}
 
 $("btn-back-lobby").addEventListener("click", () => {
   Sound.click();

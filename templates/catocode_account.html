@@ -1,0 +1,125 @@
+{% extends "catocode_base.html" %}
+{% set active = 'account' %}
+{% block title %}{{ current_display }} · CatoCode{% endblock %}
+
+{% block head %}
+<style>
+  .acct-head { padding: 48px 0 8px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .acct-avatar {
+    width: 64px; height: 64px; border-radius: 18px; flex-shrink: 0;
+    background: linear-gradient(135deg, #38BDF8, #6366F1);
+    display: grid; place-items: center; color: #fff; font-size: 28px; font-weight: 800;
+    box-shadow: 0 8px 20px rgba(56,189,248,.4);
+  }
+  .acct-head h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+  .acct-head .sub { color: var(--muted); font-size: 14.5px; margin: 4px 0 0; }
+  .acct-head .grow { flex: 1; }
+
+  .lib-section { padding: 28px 0 8px; }
+  .lib-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
+  .lib-head h2 { font-size: 21px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  .lib-head .cnt {
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    background: rgba(15,23,42,.06); padding: 2px 9px; border-radius: 999px;
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+
+  .lib-card { display: flex; flex-direction: column; gap: 8px; }
+  .lib-card .row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .lib-title { font-size: 17px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .lib-desc { color: var(--ink-2); font-size: 13.5px; line-height: 1.45; min-height: 38px;
+              display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .pill-status {
+    flex-shrink: 0; font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
+    padding: 3px 9px; border-radius: 999px; text-transform: uppercase;
+  }
+  .pill-status.pub { background: #DCFCE7; color: #15803D; }
+  .pill-status.draft { background: #FEF3C7; color: #92400E; }
+  .lib-meta { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted);
+              padding-top: 10px; border-top: 1px solid var(--line); }
+  .lib-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .lib-actions .btn { padding: 6px 12px; font-size: 12.5px; }
+  .btn-danger { background: #fff; color: #DC2626; border-color: #FECACA; }
+  .btn-danger:hover { background: #FEF2F2; }
+
+  .empty { text-align: center; padding: 50px 24px; color: var(--muted); }
+  .empty h3 { color: var(--ink); margin: 0 0 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="container">
+  <div class="acct-head">
+    <div class="acct-avatar">{{ current_display[0]|upper }}</div>
+    <div>
+      <h1>{{ current_display }}</h1>
+      <p class="sub">{{ projects|length }} project{{ '' if projects|length == 1 else 's' }} in your library</p>
+    </div>
+    <div class="grow"></div>
+    <a href="/new" class="btn btn-sky">+ New Project</a>
+  </div>
+
+  {% if not projects %}
+    <div class="card empty">
+      <h3>Your library is empty ☁️</h3>
+      <p>Start a project and publish it, or remix one from Explore.</p>
+      <a href="/new" class="btn btn-sky" style="margin-top:12px;">+ Start a Project</a>
+    </div>
+  {% endif %}
+
+  {% macro card(p) %}
+    <div class="card lib-card" data-pid="{{ p.id }}">
+      <div class="row">
+        <h3 class="lib-title">{{ p.title }}</h3>
+        <span class="pill-status {{ 'pub' if p.published else 'draft' }}">{{ 'Published' if p.published else 'Draft' }}</span>
+      </div>
+      <p class="lib-desc">{{ p.description or 'No description.' }}</p>
+      <div class="lib-meta">
+        <span>{{ p.file_count }} file{{ '' if p.file_count == 1 else 's' }}</span>
+        {% if p.published and p.ratings_count > 0 %}
+          <span>★ {{ '%.1f'|format(p.average) }} ({{ p.ratings_count }})</span>
+        {% endif %}
+      </div>
+      <div class="lib-actions">
+        <a href="/edit/{{ p.id }}" class="btn btn-primary">Edit</a>
+        {% if p.published %}<a href="/p/{{ p.id }}" class="btn btn-ghost">View</a>{% endif %}
+        <button class="btn btn-danger" data-del="{{ p.id }}">Delete</button>
+      </div>
+    </div>
+  {% endmacro %}
+
+  {% if drafts %}
+  <div class="lib-section">
+    <div class="lib-head"><h2>Drafts</h2><span class="cnt">{{ drafts|length }}</span></div>
+    <div class="grid">{% for p in drafts %}{{ card(p) }}{% endfor %}</div>
+  </div>
+  {% endif %}
+
+  {% if published %}
+  <div class="lib-section">
+    <div class="lib-head"><h2>Published</h2><span class="cnt">{{ published|length }}</span></div>
+    <div class="grid">{% for p in published %}{{ card(p) }}{% endfor %}</div>
+  </div>
+  {% endif %}
+</section>
+
+<script>
+  document.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pid = btn.dataset.del;
+      if (!confirm('Delete this project permanently?')) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/projects/' + pid, { method: 'DELETE' });
+        if (!res.ok) throw new Error();
+        const card = document.querySelector(`[data-pid="${pid}"]`);
+        if (card) card.remove();
+      } catch (e) {
+        alert('Could not delete. Try again.');
+        btn.disabled = false;
+      }
+    });
+  });
+</script>
+{% endblock %}

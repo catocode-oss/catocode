@@ -73,6 +73,11 @@
     }
     .btn-ghost:hover { background: #fff; }
     .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .save-status { font-size: 12.5px; font-weight: 600; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+    .save-status .dot { width: 7px; height: 7px; border-radius: 999px; background: #94A3B8; }
+    .save-status.saving .dot { background: #F59E0B; animation: pulse 1s ease-in-out infinite; }
+    .save-status.saved .dot { background: #10B981; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
     /* ── workspace ── */
     .workspace {
@@ -264,24 +269,14 @@
 <body>
   <div class="topbar">
     <a href="/" class="brand">
-      <span class="brand-logo">
-        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display: none;">
-          <path d="M3 13 L5.5 5 L9 13" fill="white" opacity="0.95"/>
-          <path d="M13 13 L16.5 5 L19 13" fill="white" opacity="0.95"/>
-          <circle cx="11" cy="15" r="7" fill="white" opacity="0.97"/>
-          <ellipse cx="8.8" cy="14.4" rx="1.15" ry="1.45" fill="#6366F1"/>
-          <circle cx="9.1" cy="13.9" r="0.38" fill="white" opacity="0.8"/>
-          <ellipse cx="13.2" cy="14.4" rx="1.15" ry="1.45" fill="#6366F1"/>
-          <circle cx="13.5" cy="13.9" r="0.38" fill="white" opacity="0.8"/>
-          <path d="M10.4 17.2 Q11 17.8 11.6 17.2 Q11 16.7 10.4 17.2Z" fill="#FB7185"/>
-          <path d="M9.8 17.8 Q11 18.6 12.2 17.8" stroke="#F9A8D4" stroke-width="0.5" fill="none" stroke-linecap="round"/>
-        </svg>
-      </span>
       <span>CatoCode</span>
     </a>
-    <span class="title-tag">Untitled draft · not saved</span>
+    <span class="title-tag" id="titleTag">Untitled draft · not saved</span>
     <div class="topbar-spacer"></div>
-    <a href="/" class="btn btn-ghost">Discard</a>
+    <span class="save-status" id="saveStatus" style="display:none;"><span class="dot"></span><span class="save-status-text">Saved</span></span>
+    <button id="detailsBtn" class="btn btn-ghost" style="display:none;">Details</button>
+    <button id="saveBtn" class="btn btn-ghost" style="display:none;">Save</button>
+    <a href="/" class="btn btn-ghost" id="discardBtn">Discard</a>
     <button id="publishBtn" class="btn btn-sky">Publish ☁</button>
   </div>
 
@@ -326,15 +321,11 @@
     </section>
   </div>
 
-  <!-- publish modal -->
+  <!-- publish / details modal -->
   <div id="publishModal" class="modal-bg">
     <div class="modal">
-      <h2>Publish your project</h2>
-      <p class="sub">Once published, anyone can view it on Explore.</p>
-      <div class="warn-banner">
-        <span>⚠️</span>
-        <span><b>Heads up:</b> once published, a project cannot be edited. Make sure everything is the way you want it.</span>
-      </div>
+      <h2 id="modalTitle">Publish your project</h2>
+      <p class="sub" id="modalSub">Give it a name — you can keep editing it any time.</p>
       <div class="field">
         <label for="pubTitle">Title</label>
         <input id="pubTitle" type="text" maxlength="80" placeholder="My awesome project" />
@@ -342,10 +333,6 @@
       <div class="field">
         <label for="pubDesc">Description</label>
         <textarea id="pubDesc" maxlength="500" placeholder="What does it do?"></textarea>
-      </div>
-      <div class="field">
-        <label for="pubAuthor">Your name (anonymous if blank)</label>
-        <input id="pubAuthor" type="text" maxlength="60" placeholder="Anonymous" />
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="cancelPublishBtn">Cancel</button>
@@ -355,6 +342,15 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <script>
+    // Server-provided bootstrap: existing project (edit/remix) or null (new).
+    window.BOOT = {
+      mode: {{ mode|tojson }},
+      project: {{ (project or None)|tojson }},
+      loggedIn: {{ ('true' if current_user else 'false') }},
+    };
+  </script>
 
   <script>
   // ─────────────────────────────────────────────────────────────────────
@@ -407,7 +403,23 @@ button:hover { transform: translateY(-1px); }
 });
 `;
 
-  const state = {
+  const BOOT = window.BOOT || { mode: 'new', project: null, loggedIn: false };
+  const EDITING = BOOT.mode === 'edit' && BOOT.project;
+
+  const state = EDITING ? {
+    id: BOOT.project.id,
+    title: BOOT.project.title || '',
+    description: BOOT.project.description || '',
+    published: !!BOOT.project.published,
+    files: Object.assign({}, BOOT.project.files || {}),
+    images: Object.assign({}, BOOT.project.images || {}),
+    current: ('index.html' in (BOOT.project.files || {}))
+      ? 'index.html' : Object.keys(BOOT.project.files || {})[0] || 'index.html',
+  } : {
+    id: null,
+    title: '',
+    description: '',
+    published: false,
     files: {
       'index.html': STARTER_HTML,
       'style.css':  STARTER_CSS,
@@ -443,6 +455,7 @@ button:hover { transform: translateY(-1px); }
     editor.onDidChangeModelContent(() => {
       state.files[state.current] = editor.getValue();
       refreshDebounced();
+      markDirty();
     });
     refreshPreview();
   });
@@ -509,19 +522,58 @@ button:hover { transform: translateY(-1px); }
       const span = document.createElement('span');
       span.className = 'iname';
       span.textContent = name;
-      const btn = document.createElement('button');
-      btn.title = 'Delete';
-      btn.textContent = '✕';
-      btn.addEventListener('click', () => {
+      span.title = name;
+
+      const copyBtn = document.createElement('button');
+      copyBtn.title = 'Copy filename';
+      copyBtn.textContent = '⧉';
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard?.writeText(name);
+        toast(`Copied "${name}"`);
+      });
+
+      const renameBtn = document.createElement('button');
+      renameBtn.title = 'Rename';
+      renameBtn.textContent = '✎';
+      renameBtn.addEventListener('click', () => renameImage(name));
+
+      const delBtn = document.createElement('button');
+      delBtn.title = 'Delete';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', () => {
         if (confirm(`Delete image "${name}"?`)) {
           delete state.images[name];
           renderImages();
           refreshDebounced();
+          markDirty();
         }
       });
-      li.append(img, span, btn);
+      li.append(img, span, copyBtn, renameBtn, delBtn);
       ul.appendChild(li);
     }
+  }
+
+  function renameImage(oldName) {
+    const next = prompt('Rename image to', oldName);
+    if (!next || next === oldName) return;
+    const ok = validateFilename(next, 'image');
+    if (!ok) return;
+    if (state.images[ok] || state.files[ok]) { toast('That name is taken', true); return; }
+    // Preserve order isn't critical; just remap the key.
+    state.images[ok] = state.images[oldName];
+    delete state.images[oldName];
+    // Update references in every text file so the preview keeps working.
+    for (const fname of Object.keys(state.files)) {
+      const re = new RegExp(escapeRegex(oldName), 'g');
+      if (re.test(state.files[fname])) {
+        state.files[fname] = state.files[fname].replace(new RegExp(escapeRegex(oldName), 'g'), ok);
+        if (window.monaco && models[fname]) models[fname].setValue(state.files[fname]);
+      }
+    }
+    renderImages();
+    refreshDebounced();
+    markDirty();
+    toast(`Renamed to "${ok}"`);
   }
 
   function switchFile(name) {
@@ -546,6 +598,7 @@ button:hover { transform: translateY(-1px); }
     if (editor) editor.setModel(models[ok]);
     renderFiles();
     refreshDebounced();
+    markDirty();
   });
 
   document.getElementById('renameBtn').addEventListener('click', () => {
@@ -568,6 +621,7 @@ button:hover { transform: translateY(-1px); }
     if (editor) editor.setModel(models[ok]);
     renderFiles();
     refreshDebounced();
+    markDirty();
   });
 
   document.getElementById('deleteBtn').addEventListener('click', () => {
@@ -580,6 +634,7 @@ button:hover { transform: translateY(-1px); }
     if (editor) editor.setModel(models['index.html']);
     renderFiles();
     refreshDebounced();
+    markDirty();
   });
 
   // ─────────────────────────────────────────────────────────────────────
@@ -601,6 +656,7 @@ button:hover { transform: translateY(-1px); }
       if (!ok) { toast(`Invalid name: ${file.name}`, true); continue; }
       const dataUrl = await readAsDataURL(file);
       state.images[ok] = dataUrl;
+      markDirty();
     }
     renderImages();
     refreshDebounced();
@@ -659,10 +715,48 @@ button:hover { transform: translateY(-1px); }
   // ─────────────────────────────────────────────────────────────────────
   function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+  // Resolve a reference value to a local image data-URL, or null if it isn't a
+  // local image. Absolute URLs (http/https/data/blob) are left untouched so a
+  // local image whose name happens to be a substring of an external URL (e.g.
+  // ".../star.png?v=1") never corrupts that URL.
+  function resolveImage(val) {
+    if (val == null) return null;
+    val = String(val).trim();
+    if (!val || /^(https?:|data:|blob:|#|mailto:|tel:)/i.test(val)) return null;
+    const clean = val.replace(/^\.?\//, '');           // ./star.png, /star.png
+    if (state.images[clean]) return state.images[clean];
+    const base = clean.split('/').pop();               // assets/star.png
+    if (state.images[base]) return state.images[base];
+    return null;
+  }
+
+  const IMG_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|ico|bmp)$/i;
+
   function subImages(text) {
-    for (const [name, dataUrl] of Object.entries(state.images)) {
-      text = text.replace(new RegExp(escapeRegex(name), 'g'), dataUrl);
-    }
+    // 1) HTML attributes: src / href / poster / data / content
+    text = text.replace(
+      /\b(src|href|poster|data|content)\s*=\s*("([^"]*)"|'([^']*)')/gi,
+      (m, attr, _q, dq, sq) => {
+        const val = dq !== undefined ? dq : sq;
+        const data = resolveImage(val);
+        return data ? `${attr}="${data}"` : m;
+      }
+    );
+    // 2) CSS url(...)
+    text = text.replace(
+      /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,
+      (m, _q, val) => { const d = resolveImage(val); return d ? `url(${d})` : m; }
+    );
+    // 3) Quoted string literals that name an image file (e.g. JS asset loaders
+    //    like Phaser's load.image('star', 'star.png')).
+    text = text.replace(
+      /(['"`])([^'"`]+?)\1/g,
+      (m, q, val) => {
+        if (!IMG_EXT_RE.test(val.trim())) return m;
+        const d = resolveImage(val);
+        return d ? q + d + q : m;
+      }
+    );
     return text;
   }
 
@@ -700,13 +794,113 @@ button:hover { transform: translateY(-1px); }
   document.getElementById('refreshBtn').addEventListener('click', refreshPreview);
 
   // ─────────────────────────────────────────────────────────────────────
-  // publish flow
+  // publish / save / details flow
   // ─────────────────────────────────────────────────────────────────────
   const publishModal = document.getElementById('publishModal');
-  document.getElementById('publishBtn').addEventListener('click', () => {
+  const publishBtn   = document.getElementById('publishBtn');
+  const saveBtn      = document.getElementById('saveBtn');
+  const detailsBtn   = document.getElementById('detailsBtn');
+  const discardBtn   = document.getElementById('discardBtn');
+  let modalIntent = 'publish';   // 'publish' (new) | 'details' (edit)
+
+  function syncCurrent() {
+    if (editor && models[state.current]) {
+      state.files[state.current] = models[state.current].getValue();
+    }
+  }
+
+  // ── autosave: first edit creates a draft, later edits debounce a PATCH ──
+  const loggedIn = !!BOOT.loggedIn;
+  let dirty = false, autosavePaused = false, creatingDraft = false, autosaving = false, autosaveTimer = null;
+
+  function setSaveStatus(s) {
+    const el = document.getElementById('saveStatus'); if (!el) return;
+    if (s === 'hidden') { el.style.display = 'none'; return; }
+    el.style.display = ''; el.classList.toggle('saving', s === 'saving'); el.classList.toggle('saved', s === 'saved');
+    el.querySelector('.save-status-text').textContent = s === 'saving' ? 'Saving…' : 'Saved';
+  }
+  function authPause() { autosavePaused = true; clearTimeout(autosaveTimer); setSaveStatus('hidden'); toast('Sign in to keep your work saved', true); }
+  function projectBody(extra) {
+    syncCurrent();
+    return Object.assign({ title: state.title || 'Untitled draft', description: state.description, files: state.files, images: state.images }, extra || {});
+  }
+  function markDirty() {
+    if (!loggedIn || autosavePaused) return;       // anonymous → no autosave; paused after auth loss
+    dirty = true;
+    if (!state.id) { ensureDraft(); return; }       // first edit creates the draft
+    clearTimeout(autosaveTimer); autosaveTimer = setTimeout(autosaveNow, 1500);
+  }
+  async function ensureDraft() {
+    if (state.id || creatingDraft) return;
+    creatingDraft = true; setSaveStatus('saving');
+    try {
+      const res = await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(projectBody({ published: false })) });
+      const data = await res.json();
+      if (!res.ok) { if (data && data.login) { authPause(); return; } throw new Error(data.error || 'Autosave failed'); }
+      state.id = data.id; state.published = false;
+      try { history.replaceState(null, '', '/edit/' + state.id); } catch (e) {}
+      setupTopbar(); dirty = false; setSaveStatus('saved');
+    } catch (err) { setSaveStatus('hidden'); toast(err.message || 'Autosave failed', true); }
+    finally { creatingDraft = false; if (dirty) markDirty(); }
+  }
+  async function autosaveNow() {
+    if (!state.id || autosavePaused || autosaving) return;
+    autosaving = true; dirty = false; setSaveStatus('saving');
+    try {
+      const res = await fetch('/api/projects/' + state.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(projectBody()) });
+      const data = await res.json();
+      if (!res.ok) { if (data && data.login) { authPause(); return; } throw new Error(data.error || 'Save failed'); }
+      setSaveStatus('saved');
+    } catch (err) { dirty = true; setSaveStatus('hidden'); toast(err.message || 'Autosave failed', true); }
+    finally { autosaving = false; if (dirty && !autosavePaused) { clearTimeout(autosaveTimer); autosaveTimer = setTimeout(autosaveNow, 1500); } }
+  }
+
+  function setupTopbar() {
+    if (state.id) {
+      saveBtn.style.display = '';
+      detailsBtn.style.display = '';
+      discardBtn.textContent = 'Back';
+      discardBtn.href = '/account';
+      if (state.published) {
+        publishBtn.textContent = 'View ↗';
+        document.getElementById('titleTag').textContent = (state.title || 'Untitled') + ' · Published';
+      } else {
+        publishBtn.textContent = 'Publish ☁';
+        document.getElementById('titleTag').textContent = (state.title || 'Untitled') + ' · Draft';
+      }
+      if (loggedIn) setSaveStatus('saved');
+    } else {
+      document.getElementById('titleTag').textContent = 'Untitled draft · not saved';
+      setSaveStatus('hidden');
+    }
+  }
+  setupTopbar();
+
+  function openModal(intent) {
+    modalIntent = intent;
+    document.getElementById('pubTitle').value = state.title || '';
+    document.getElementById('pubDesc').value = state.description || '';
+    if (intent === 'details') {
+      document.getElementById('modalTitle').textContent = 'Project details';
+      document.getElementById('modalSub').textContent = 'Update the title and description.';
+      document.getElementById('confirmPublishBtn').textContent = 'Save details';
+    } else {
+      document.getElementById('modalTitle').textContent = 'Publish your project';
+      document.getElementById('modalSub').textContent = 'Give it a name — you can keep editing it any time.';
+      document.getElementById('confirmPublishBtn').textContent = 'Publish';
+    }
     publishModal.classList.add('show');
     document.getElementById('pubTitle').focus();
+  }
+
+  publishBtn.addEventListener('click', () => {
+    if (state.id && state.published) { window.location.href = '/p/' + state.id; return; }
+    if (state.id && !state.published) { publishDraft(); return; }
+    openModal('publish');               // brand-new project
   });
+  detailsBtn.addEventListener('click', () => openModal('details'));
+  saveBtn.addEventListener('click', () => saveProject(false));
+
   document.getElementById('cancelPublishBtn').addEventListener('click', () => {
     publishModal.classList.remove('show');
   });
@@ -714,36 +908,113 @@ button:hover { transform: translateY(-1px); }
     if (e.target === publishModal) publishModal.classList.remove('show');
   });
 
+  function handleAuthError(data) {
+    if (data && data.login) {
+      toast('Please sign in first — redirecting…', true);
+      const next = encodeURIComponent(location.pathname);
+      setTimeout(() => { window.location.href = '/login?next=' + next; }, 900);
+      return true;
+    }
+    return false;
+  }
+
   document.getElementById('confirmPublishBtn').addEventListener('click', async () => {
-    const btn = document.getElementById('confirmPublishBtn');
     const title = document.getElementById('pubTitle').value.trim();
     const description = document.getElementById('pubDesc').value.trim();
-    const author = document.getElementById('pubAuthor').value.trim();
     if (!title) { toast('Title is required', true); return; }
+    state.title = title;
+    state.description = description;
+    if (modalIntent === 'details') {
+      publishModal.classList.remove('show');
+      setupTopbar();
+      saveProject(false);
+      return;
+    }
+    // publish: promote an existing draft (never duplicate) or create a new project
+    const btn = document.getElementById('confirmPublishBtn');
     btn.disabled = true; btn.textContent = 'Publishing…';
+    clearTimeout(autosaveTimer);
     try {
-      // sync latest editor content
-      if (editor && models[state.current]) {
-        state.files[state.current] = models[state.current].getValue();
+      if (state.id) {
+        const res = await fetch('/api/projects/' + state.id, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(projectBody({ published: true })),
+        });
+        const data = await res.json();
+        if (!res.ok) { if (handleAuthError(data)) return; throw new Error(data.error || 'Publish failed'); }
+        state.published = true;
+        toast('Published! Redirecting…');
+        setTimeout(() => { window.location.href = '/p/' + state.id; }, 600);
+      } else {
+        syncCurrent();
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title, description, published: true,
+            files: state.files, images: state.images,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { if (handleAuthError(data)) return; throw new Error(data.error || 'Publish failed'); }
+        toast('Published! Redirecting…');
+        setTimeout(() => { window.location.href = data.url; }, 600);
       }
-      const res = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title, description, author,
-          files: state.files,
-          images: state.images,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Publish failed');
-      toast('Published! Redirecting…');
-      setTimeout(() => { window.location.href = data.url; }, 600);
     } catch (err) {
       toast(err.message || 'Publish failed', true);
       btn.disabled = false; btn.textContent = 'Publish';
     }
   });
+
+  async function saveProject(silent) {
+    if (!state.id) return;
+    clearTimeout(autosaveTimer);
+    syncCurrent();
+    saveBtn.disabled = true;
+    const prev = saveBtn.textContent; saveBtn.textContent = 'Saving…'; setSaveStatus('saving');
+    try {
+      const res = await fetch('/api/projects/' + state.id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: state.title, description: state.description,
+          files: state.files, images: state.images,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { if (handleAuthError(data)) return; throw new Error(data.error || 'Save failed'); }
+      dirty = false; setSaveStatus('saved');
+      if (!silent) toast('Saved');
+    } catch (err) {
+      toast(err.message || 'Save failed', true); setSaveStatus('hidden');
+    } finally {
+      saveBtn.disabled = false; saveBtn.textContent = prev;
+    }
+  }
+
+  async function publishDraft() {
+    if (!state.title) { openModal('publish'); return; }
+    syncCurrent();
+    publishBtn.disabled = true; publishBtn.textContent = 'Publishing…';
+    try {
+      const res = await fetch('/api/projects/' + state.id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: state.title, description: state.description,
+          files: state.files, images: state.images, published: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { if (handleAuthError(data)) return; throw new Error(data.error || 'Publish failed'); }
+      toast('Published! Redirecting…');
+      setTimeout(() => { window.location.href = '/p/' + state.id; }, 600);
+    } catch (err) {
+      toast(err.message || 'Publish failed', true);
+      publishBtn.disabled = false; publishBtn.textContent = 'Publish ☁';
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────────────
   // helpers

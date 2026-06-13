@@ -75,6 +75,11 @@
       <button class="pill active" data-sort="new">Newest</button>
       <button class="pill" data-sort="stars">Top rated</button>
     </div>
+    <div class="sort-pills" id="typePills">
+      <button class="pill active" data-type="all">All</button>
+      <button class="pill" data-type="game">Games</button>
+      <button class="pill" data-type="html">HTML</button>
+    </div>
   </div>
 
   <div id="grid" class="grid">
@@ -85,8 +90,9 @@
          data-author="{{ p.author|lower }}"
          data-avg="{{ p.average }}"
          data-count="{{ p.ratings_count }}"
+         data-type="{{ p.type }}"
          data-created="{{ p.created_at }}">
-        <h3 class="proj-title">{{ p.title }}</h3>
+        <h3 class="proj-title">{{ p.title }}{% if p.type == 'game' %} <span class="badge">GAME</span>{% endif %}</h3>
         <p class="proj-desc">{{ p.description or 'No description.' }}</p>
         <div class="proj-meta">
           <span class="proj-author">by {{ p.author }}</span>
@@ -110,14 +116,18 @@
 <script>
   const grid = document.getElementById('grid');
   const searchInput = document.getElementById('searchInput');
-  const pills = document.querySelectorAll('.pill');
+  const pills = document.querySelectorAll('.pill[data-sort]');
   const cards = Array.from(grid.querySelectorAll('.proj-card'));
+  const typePills = document.querySelectorAll('#typePills .pill');
+  let currentType = 'all';
 
   function applyFilter() {
     const q = searchInput.value.trim().toLowerCase();
     cards.forEach(c => {
       const hay = [c.dataset.title, c.dataset.desc, c.dataset.author].join(' ');
-      c.style.display = (!q || hay.includes(q)) ? '' : 'none';
+      const okText = (!q || hay.includes(q));
+      const okType = (currentType === 'all' || c.dataset.type === currentType);
+      c.style.display = (okText && okType) ? '' : 'none';
     });
   }
 
@@ -141,6 +151,12 @@
     pills.forEach(x => x.classList.remove('active'));
     p.classList.add('active');
     applySort(p.dataset.sort);
+  }));
+  typePills.forEach(p => p.addEventListener('click', () => {
+    typePills.forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    currentType = p.dataset.type;
+    applyFilter();
   }));
 </script>
 {% endblock %}
